@@ -1,0 +1,21 @@
+num_ranks 2
+
+rank 0 {
+l1: send 4b to 1 tag 1
+l2: calc 1000
+l1 requires l2
+l3: calc 2000
+l3 irequires l1
+l4: calc 4000
+l4 requires l1
+l4 requires l3
+}
+
+
+rank 1 {
+l1: recv 4b from 0 tag 1
+l2: calc 3000
+l1 requires l2
+l3: calc 2000
+l3 requires l1
+}

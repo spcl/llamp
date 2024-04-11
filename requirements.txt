@@ -1,0 +1,9 @@
+python-igraph
+numpy
+matplotlib
+tqdm
+ortools
+pycairo
+pandas
+scipy
+gurobipy
