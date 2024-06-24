@@ -1,3 +1,15 @@
 [submodule "validation/ucx"]
 	path = validation/ucx
 	url = https://github.com/openucx/ucx.git
+[submodule "apps/hpcg"]
+	path = apps/hpcg
+	url = https://github.com/hpcg-benchmark/hpcg.git
+[submodule "apps/lulesh"]
+	path = apps/lulesh
+	url = https://github.com/LLNL/LULESH.git
+[submodule "apps/icon"]
+	path = apps/icon
+	url = https://gitlab.dkrz.de/icon/icon-model.git
+[submodule "apps/milc_qcd"]
+	path = apps/milc_qcd
+	url = https://github.com/milc-qcd/milc_qcd.git
