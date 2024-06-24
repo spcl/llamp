@@ -13,3 +13,6 @@
 [submodule "apps/milc_qcd"]
 	path = apps/milc_qcd
 	url = https://github.com/milc-qcd/milc_qcd.git
+[submodule "apps/lammps"]
+	path = apps/lammps
+	url = https://github.com/lammps/lammps.git
