@@ -106,13 +106,23 @@ fi
 echo "[INFO] MPICH installation: SUCCESS"
 cd ../../
 
+
 echo "[INFO] Set up liballprof ..."
-cd liballprof/ && bash ./setup.sh
+cd liballprof/ && source ./setup.sh
 # Asserts that the compilation was successful
 if [ $? -ne 0 ]; then
     echo "[ERROR] liballprof compilation failed."
     exit 1
 fi
+
+# echo "[INFO] Set up liballprof2"
+# cd ../liballprof2 && make clean && make -j8
+# # Asserts that the compilation was successful
+# if [ $? -ne 0 ]; then
+#     echo "[ERROR] liballprof2 compilation failed."
+#     exit 1
+# fi
+echo "[INFO] liballprof2 setup: SUCCESS"
 
 echo "[INFO] Set up Schedgen"
 echo "[WARNING] Make sure to install the 'gengetopt' package before compiling Schedgen."
@@ -122,6 +132,8 @@ if [ $? -ne 0 ]; then
     echo "[ERROR] Schedgen compilation failed."
     exit 1
 fi
+echo "[INFO] Schedgen setup: SUCCESS"
+export PATH=$PWD:$PATH
 
 echo "[INFO] Set up LogGOPSim"
 echo "[WARNING] Make sure to install the 're2c' and 'graphviz-dev' packages before compiling Schedgen."
@@ -131,3 +143,7 @@ if [ $? -ne 0 ]; then
     echo "[ERROR] LogGOPSim compilation failed."
     exit 1
 fi
+echo "[INFO] LogGOPSim setup: SUCCESS"
+export PATH=$PWD:$PATH
+cd ..
+echo "[INFO] All setup: SUCCESS"

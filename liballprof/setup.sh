@@ -68,9 +68,13 @@ then
         exit 1
     fi
     echo "[INFO] Set up timer lib: SUCCESS"
-    exit 0
-fi
 
-echo "[ERROR] liballprof.so or liballprof_f77.so was not created"
-echo "[INFO] Set up liballprof: FAILED"
-exit 1
+    export LIBALLPROF_C=$(pwd)/liballprof/.libs/liballprof.so
+    export LIBALLPROF_F77=$(pwd)/liballprof/.libs/liballprof_f77.so
+    export LIBTIMER_C=$(pwd)/liballprof/mpi_timer.so
+    export LIBTIMER_F77=$(pwd)/liballprof/mpi_timer_f77.so
+else
+    echo "[ERROR] liballprof.so or liballprof_f77.so was not created"
+    echo "[INFO] Set up liballprof: FAILED"
+    exit 1
+fi
