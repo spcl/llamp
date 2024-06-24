@@ -1,0 +1,3 @@
+[submodule "validation/ucx"]
+	path = validation/ucx
+	url = https://github.com/openucx/ucx.git
