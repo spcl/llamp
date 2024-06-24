@@ -58,6 +58,16 @@ fi
 if test -f "liballprof.so" && test -f "liballprof_f77.so"
 then
     echo "[INFO] Set up liballprof: SUCCESS"
+    cd ..
+    # Setup timer lib using makefile.measure-time
+    echo "[INFO] Set up timer lib ..."
+    CC=${MPICC} make -f makefile.measure-time clean && make -f makefile.measure-time all
+    if [ $? -ne 0 ]
+    then
+        echo "[ERROR] make -f makefile.measure-time all failed"
+        exit 1
+    fi
+    echo "[INFO] Set up timer lib: SUCCESS"
     exit 0
 fi
 
