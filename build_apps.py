@@ -10,7 +10,7 @@ def print_warning(message: str):
     """
     CSTART = '\033[93m'
     CEND = '\033[0m'
-    print(f"[WARNING] {CSTART}{message}{CEND}")
+    print(f"{CSTART}[WARNING] {message}{CEND}")
 
 
 def print_error(message: str):
@@ -19,7 +19,7 @@ def print_error(message: str):
     """
     CSTART = '\033[91m'
     CEND = '\033[0m'
-    print(f"[ERROR] {CSTART}{message}{CEND}")
+    print(f"{CSTART}[ERROR] {message}{CEND}")
 
 
 def print_success(message: str):
@@ -38,7 +38,7 @@ def build_lulesh(jobs: int = 1,
     Clones and builds the LULESH benchmark.
     Returns True if the build is successful, False otherwise.
     """
-    print("[INFO] Building LULESH benchmark...")
+    print("[INFO] Building LULESH...")
 
     # Makes sure that the directory is already cloned
     if not os.path.exists("lulesh"):
@@ -148,7 +148,7 @@ def build_hpcg(jobs: int = 1,
     Clones and builds the HPCG benchmark.
     Returns True if the build is successful, False otherwise.
     """
-    print("[INFO] Building HPCG benchmark...")
+    print("[INFO] Building HPCG...")
 
     # Makes sure that the directory is already cloned
     if not os.path.exists("hpcg"):
@@ -169,7 +169,7 @@ def build_hpcg(jobs: int = 1,
         print_error("Failed to create the build directory")
         return False
     
-    arch = "Linux_MPI"
+    arch = "MPI_GCC_OMP"
     print_warning(f"Make sure that all parameters are specified in the file setup/Make.{arch}")
 
 
@@ -186,19 +186,193 @@ def build_hpcg(jobs: int = 1,
         return False
 
     # Changes the directory to the parent directory
-    os.chdir("..")
+    os.chdir("../../")
 
     return True
 
 
+def build_lammps(jobs: int = 1,
+                 verbose: bool = False) -> bool:
+    """
+    Builds the LAMMPS application.
+    """
+    print("[INFO] Building LAMMPS...")
 
-def build_lammps(verbose: bool = False) -> bool:
-    pass
+    # Makes sure that the directory is already cloned
+    if not os.path.exists("lammps"):
+        print_error("Directory 'lammps' does not exist. Make sure to clone the submodule")
+        return False
+    
+    # Changes the directory to `lammps`
+    os.chdir("lammps")
+
+    # Makes sure that the build directory does not exist
+    if os.path.exists("build"):
+        if os.system("rm -rf build") != 0:
+            print_error("Failed to remove the build directory")
+            return False
+    
+    # Creates the build directory
+    if os.system("mkdir build") != 0:
+        print_error("Failed to create the build directory")
+        return False
+
+    # Changes the directory to `build`
+    os.chdir("build")
+
+    # Runs the command "cmake" to configure the build
+    if os.system("cmake ../cmake -DBUILD_MPI=yes -DBUILD_OMP=yes -DPKG_MANYBODY=yes") != 0:
+        print_error("Failed to configure the build")
+        return False
+
+    # Runs the command "make" to build the benchmark
+    if os.system(f"make -j {jobs}") != 0:
+        print_error("Failed to build the benchmark")
+        return False
+    
+    # Asserts that the 'lmp' executable exists
+    assert os.path.exists("lmp"), "lmp executable does not exist"
+
+    # Changes the directory to the parent directory
+    os.chdir("../../")
+    return True
+
+
+def build_milc(jobs: int = 1,
+               verbose: bool = False) -> bool:
+    """
+    Builds the MILC application.
+    """
+    print("[INFO] Building MILC...")
+
+    # Makes sure that the directory is already cloned
+    if not os.path.exists("milc_qcd"):
+        print_error("Directory 'milc_qcd' does not exist. Make sure to clone the submodule")
+        return False
+    
+    os.chdir("milc_qcd")
+
+    # Checks if the scidac directory exists
+    if os.path.exists("scidac"):
+        # Removes the scidac directory
+        if os.system("rm -rf scidac") != 0:
+            print_error("Failed to remove the scidac directory")
+            return False
+    
+    # Creates the scidac directory
+    if os.system("mkdir scidac") != 0:
+        print_error("Failed to create the scidac directory")
+        return False
+
+    print("[INFO] Building SCIDAC dependencies")
+    # Changes the directory to `scidac`
+    os.chdir("scidac")
+    # Clones the https://github.com/usqcd-software/qmp.git repository
+    if os.system("git clone https://github.com/usqcd-software/qmp.git") != 0:
+        print_error("Failed to clone the qmp repository")
+        return False
+    
+    # Changes the directory to `qmp`
+    os.chdir("qmp")
+    # Runs the command "autoreconf -f -i" to generate the configure script
+    if os.system("autoreconf -f -i") != 0:
+        print_error("Failed to generate the configure script")
+        return False
+
+    # Runs the command "./configure --prefix=$PWD/install" to configure the build
+    if os.system("./configure --prefix=$PWD/install CC=mpicc --with-qmp-comms-type=MPI") != 0:
+        print_error("Failed to configure the build")
+        return False
+    
+    # Runs the command "make" to build the benchmark
+    if os.system(f"make -j {jobs}") != 0:
+        print_error("Failed to build QMP")
+        return False
+
+    # Runs the command "make install" to install the benchmark
+    if os.system("make install") != 0:
+        print_error("Failed to install QMP")
+        return False
+
+    # Asserts that 'qmp-config' exists
+    assert os.path.exists("install/bin/qmp-config"), "qmp-config does not exist"
+
+    # Changes the directory to the ROOT directory of MILC
+    os.chdir("../../")
+
+    # Replaces line 28 in the Makefile with the following:
+    # MPP ?= true
+    if os.system("sed -i '28s/.*/MPP ?= true/' Makefile") != 0:
+        print_error("Failed to replace line 28 in the Makefile")
+        return False
+    
+    # Replaces line 107 in the Makefile with the following:
+    # OMP ?= true
+    if os.system("sed -i '107s/.*/OMP ?= true/' Makefile") != 0:
+        print_error("Failed to replace line 107 in the Makefile")
+        return False
+
+    # Replaces line 293 in the Makefile with the following:
+    # WANTQMP ?= true
+    if os.system("sed -i '293s/.*/WANTQMP ?= true/' Makefile") != 0:
+        print_error("Failed to replace line 293 in the Makefile")
+        return False
+    
+    # Replaces line 301 in the Makefile with the following:
+    # SCIDAC = $(shell pwd)/../scidac
+    if os.system("sed -i '301s/.*/SCIDAC = $(shell pwd)\/..\/scidac/' Makefile") != 0:
+        print_error("Failed to replace line 301 in the Makefile")
+        return False
+
+    # Replaces line 302 in the Makefile with the following:
+    # TAG=/install
+    if os.system("sed -i '302s/.*/TAG=\/install/' Makefile") != 0:
+        print_error("Failed to replace line 302 in the Makefile")
+        return False
+
+    # Copies the Makefile to the directory ks_imp_dyn
+    if os.system("cp Makefile ks_imp_dyn/") != 0:
+        print_error("Failed to copy the Makefile to the ks_imp_dyn directory")
+        return False
+    
+    # Changes the directory to `ks_imp_dyn`
+    os.chdir("ks_imp_dyn")
+    # Runs the command "make clean"
+    if os.system("make clean") != 0:
+        print_error("Failed to clean the directory")
+        return False
+
+    # Inserts the following line to line 46 of Make_template
+    # '  reunitarize_ks.o \'
+    if os.system("sed -i '46i\\  reunitarize_ks.o \\\\' Make_template") != 0:
+        print_error("Failed to insert a line to Make_template")
+        return False
+
+    # Runs the command "make su3_rmd" to build the application
+    if os.system(f"make su3_rmd -j {jobs}") != 0:
+        print_error("Failed to build the benchmark")
+        return False
+
+    assert os.path.exists("su3_rmd"), "su3_rmd executable does not exist"
+    return True
 
 
 
-def build_icon(verbose: bool = False) -> bool:
-    pass
+def build_icon(jobs: int = 1,
+               verbose: bool = False) -> bool:
+    """
+    Builds the ICON application.
+    """
+    print("[INFO] Building ICON...")
+
+    # Makes sure that the directory is already cloned
+    if not os.path.exists("icon"):
+        print_error("Directory 'icon' does not exist. Make sure to clone the submodule")
+        return False
+    
+    # Changes the directory to `icon`
+    os.chdir("icon")
+    
 
 
 # The build functions for each benchmark
@@ -206,6 +380,7 @@ build_funcs = {
     "lulesh": build_lulesh,
     "npb": build_npb,
     "hpcg": build_hpcg,
+    "milc": build_milc,
     "lammps": build_lammps,
     "gromacs": build_icon,
 }
@@ -221,7 +396,7 @@ def build_app(app: str,
     os.chdir("apps")
 
     if app == "all":
-        apps = [ "lulesh", "npb", "hpcg", "lammps", "icon" ]
+        apps = [ "lulesh", "npb", "hpcg", "lammps", "milc", "icon" ]
     else:
         apps = [app]
 
