@@ -372,7 +372,48 @@ def build_icon(jobs: int = 1,
     
     # Changes the directory to `icon`
     os.chdir("icon")
+
+    # Configures the build
+    config_cmd = './configure --disable-loop-exchange --disable-jsbach --enable-mpi '\
+    '--disable-gpu CFLAGS="-I${NETCDF_C_INSTALL_DIR}/include" FCFLAGS="-g -fallow-argument-mismatch '\
+    '-I${NETCDF_FORTRAN_INSTALL_DIR}/include -I${NETCDF_C_INSTALL_DIR}/include" '\
+    'LDFLAGS="-L${NETCDF_C_INSTALL_DIR}/lib -L${NETCDF_FORTRAN_INSTALL_DIR}/lib" '\
+    'LIBS="-lnetcdff -lnetcdf -lopenblas" CC=mpicc FC=mpif90 '\
+    '--disable-rte-rrtmgp --disable-mpi-rget --disable-coupling --enable-openmp'
+    print(f"[INFO] Config command: {config_cmd}")
+    if os.system(config_cmd) != 0:
+        print_error("Failed to configure the build")
+        return False
+
+    mpi_src_dir = "../../case-studies/icon/icon-src-release"
+    # Copies the file from '../../case-studies/icon/icon-src/mo_mpi.f90' to
+    # src/mo_mpi.f90
+    if os.system(f"cp {mpi_src_dir}/mo_mpi.f90 src/parallel_infrastructure/mo_mpi.f90") != 0:
+        print_error("Failed to copy the file 'mo_mpi.f90'")
+        return False
     
+    # Copies the file from '../../case-studies/icon/icon-src/mo_atmo_nonhydrostatic.f90' to
+    # src/drivers/mo_atmo_nonhydrostatic.f90
+    if os.system(f"cp {mpi_src_dir}/mo_atmo_nonhydrostatic.f90 src/drivers/mo_atmo_nonhydrostatic.f90") != 0:
+        print_error("Failed to copy the file 'mo_atmo_nonhydrostatic.f90'")
+        return False
+
+    # Runs 'make clean'
+    if os.system("make clean") != 0:
+        print_error("Failed to clean the directory")
+        return False
+
+    # Builds the application
+    if os.system(f"make -j {jobs}") != 0:
+        print_error("Failed to build the benchmark")
+        return False
+    
+    assert os.path.exists("bin/icon"), "icon executable does not exist"
+
+    # Changes the directory to the parent directory
+    os.chdir("../")
+    return True
+
 
 
 # The build functions for each benchmark
@@ -382,7 +423,7 @@ build_funcs = {
     "hpcg": build_hpcg,
     "milc": build_milc,
     "lammps": build_lammps,
-    "gromacs": build_icon,
+    "icon": build_icon,
 }
 
 

@@ -1,5 +1,6 @@
 #!/bin/bash
 # Install dependencies for the toolchain
+# Only works for Ubuntu
 
 sudo apt update
 sudo apt install -y build-essential manpages-dev software-properties-common
@@ -18,3 +19,4 @@ sudo apt install -y python3.11-distutils
 sudo apt install -y cmake
 sudo update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1
 curl -sS https://bootstrap.pypa.io/get-pip.py | python3
+sudo apt install -y libopenblas-dev

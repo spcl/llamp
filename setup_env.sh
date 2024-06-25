@@ -9,13 +9,13 @@ export MPICH_INSTALL_DIR=$MPICH_ROOT/install
 # Defines the installation directory for netcdf-fortran
 export AUTOCONF_INSTALL_DIR=$PWD/deps/autoconf/install
 export HDF5_INSTALL_DIR=$PWD/deps/hdf5/install
+export NETCDF_C_INSTALL_DIR=$PWD/deps/netcdf-c/install
 export NETCDF_FORTRAN_INSTALL_DIR=$PWD/deps/netcdf-fortran/install
 export JOBS=64
 export CC=gcc
 export CXX=g++
 export FC=gfortran
 export MPICC=mpicc
-export MPIFC=mpifort
 
 
 # echo "[INFO] Set up UCX ..."
@@ -93,4 +93,21 @@ then
     echo "[ERROR] h5pfc could not be found."
     exit 1
 fi
-
+export PATH=$NETCDF_C_INSTALL_DIR/bin:$PATH
+export LD_LIBRARY_PATH=$NETCDF_C_INSTALL_DIR/lib:$LD_LIBRARY_PATH
+# Asserts that the installation was successful
+# Asserts that nc-config is in the PATH
+if ! command -v nc-config &> /dev/null
+then
+    echo "[ERROR] nc-config could not be found."
+    exit 1
+fi
+export PATH=$NETCDF_FORTRAN_INSTALL_DIR/bin:$PATH
+export LD_LIBRARY_PATH=$NETCDF_FORTRAN_INSTALL_DIR/lib:$LD_LIBRARY_PATH
+# Makes sure that the installation was successful
+# Asserts that nf-config is in the PATH
+if ! command -v nf-config &> /dev/null
+then
+    echo "[ERROR] nf-config could not be found."
+    exit 1
+fi
