@@ -142,7 +142,8 @@ def convert_trace_to_goal(project: str, trace_dir: str, project_dir: str,
 
 
 
-def convert_goal_to_lp(project: str, proj_dir: str, o_val: int, 
+def convert_goal_to_lp(project: str, proj_dir: str, out_dir: str,
+                       o_val: int,
                        G_val: float, S_val: Optional[int],
                        topology: str, verbose: bool) -> None:
     """
@@ -160,7 +161,8 @@ def convert_goal_to_lp(project: str, proj_dir: str, o_val: int,
 
     S_arg = f"-S {S_val}" if S_val else ""
     v_arg = "-v" if verbose else ""
-    lp_gen_command = f"python3 {main_script} -g {goal_file} -c {comm_dep_file} -o {o_val} -G {G_val} {S_arg} --topology {topology} {v_arg}"
+    lp_file = f"{out_dir}/{project}.lp"
+    lp_gen_command = f"python3 {main_script} -g {goal_file} -c {comm_dep_file} -o {o_val} -G {G_val} {S_arg} --topology {topology} {v_arg} --export-lp-model-path {lp_file}"
     if verbose:
         print("[INFO] Converting goal file to LP model...")
         print(f"[INFO] Command to run: {lp_gen_command}")
@@ -241,14 +243,28 @@ if __name__ == "__main__":
     if verbose:
         print(f"[INFO] Trace directory: {trace_dir}")
 
+    
+    # Checks if the output directory exists
+    out_dir = args.output_dir if args.output_dir else os.path.join(proj_dir, "output")
+    if not os.path.exists(out_dir):
+        # Creates the output directory
+        os.makedirs(out_dir)
+        if verbose:
+            print(f"[INFO] Created output directory: {out_dir}")
+    if verbose:
+        print(f"[INFO] Output directory: {out_dir}")
+
+
     if args.liballprof_dir:
         liballprof = args.liballprof_dir
     else:
         liballprof = os.path.join(os.getcwd(), "..", "liballprof", ".libs")
     
     liballprof = os.path.join(liballprof, "liballprof.so" if not args.f77 else "liballprof_f77.so")
+    assert os.path.exists(liballprof), f"[ERROR] liballprof.so does not exist: {liballprof}"
     if verbose:
         print(f"[INFO] liballprof.so: {liballprof}")
+
 
     if not args.skip_tracing:
         trace_dir = collect_traces(trace_dir, args.project, args.command, args.icon,
@@ -269,4 +285,6 @@ if __name__ == "__main__":
     convert_trace_to_goal(args.project, trace_dir, proj_dir, args.verbose)
 
     # Converts the goal file to LP model
-    convert_goal_to_lp(args.project, proj_dir, args.o, args.G, args.S, args.topology, args.verbose)
+    convert_goal_to_lp(args.project, proj_dir, out_dir,
+                       args.o, args.G, args.S, args.topology, args.verbose)
+    exit(0)

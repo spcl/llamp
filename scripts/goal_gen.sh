@@ -5,8 +5,8 @@
 
 EXTRAPOLATION=1
 VERBOSE=0
-SCHEDGEN=/cluster/home/sishen/workspace/lgs-mpi/Schedgen/schedgen
-LOGGOPSIM_DIR=/cluster/home/sishen/workspace/lgs-mpi/LogGOPSim
+SCHEDGEN=$(pwd)/../Schedgen/schedgen
+LOGGOPSIM_DIR=$(pwd)/../LogGOPSim
 TXT2BIN=${LOGGOPSIM_DIR}/txt2bin
 LOGGOPSIM=${LOGGOPSIM_DIR}/LogGOPSim
 

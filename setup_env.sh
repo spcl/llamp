@@ -42,6 +42,7 @@ export LIBALLPROF2_C=$PWD/liballprof2/liballprof2.so
 export LIBALLPROF2_F77=$PWD/liballprof2/liballprof2_f77.so
 export PATH=$PWD/Schedgen:$PATH
 export PATH=$PWD/LogGOPSim:$PATH
+export LOGGOPSIM_PATH=$PWD/LogGOPSim/LogGOPSim
 
 export GUROBI_HOME=$PWD/deps/gurobi/linux64
 export PATH=$GUROBI_HOME/bin:$PATH
