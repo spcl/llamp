@@ -157,6 +157,40 @@ export PATH=$PWD:$PATH
 cd ..
 
 
+# Installs gurobi
+echo "[INFO] Set up gurobi ..."
+# Checks if gurobi has already been installed by using the gurobi_cli command
+if ! command -v gurobi_cl &> /dev/null
+then
+    echo "[INFO] Gurobi not found."
+    echo "[INFO] Downloading gurobi ..."
+    wget https://packages.gurobi.com/11.0/gurobi11.0.2_linux64.tar.gz
+    tar -xvf gurobi11.0.2_linux64.tar.gz
+    # Moves the gurobi directory to the "deps" directory
+    mv gurobi1102 deps/gurobi
+    rm gurobi11.0.2_linux64.tar.gz
+    # Asserts that the gurobi directory is in the "deps" directory
+    if [ ! -d "deps/gurobi" ]; then
+        echo "[ERROR] gurobi directory not found in the 'deps' directory."
+        exit 1
+    fi
+else
+    echo "[INFO] Gurobi found."
+fi
+export GUROBI_HOME=$PWD/deps/gurobi/linux64
+export PATH=$GUROBI_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$GUROBI_HOME/lib:$LD_LIBRARY_PATH
+
+# Makes sure that the installation was successful
+# Asserts that gurobi_cl is in the PATH
+if ! command -v gurobi_cl &> /dev/null
+then
+    echo "[ERROR] gurobi_cl could not be found."
+    exit 1
+fi
+echo "[INFO] Gurobi installation: SUCCESS"
+
+
 # Compiles autoconf
 echo "[INFO] Set up autoconf ..."
 # Asserts that the autoconf source code is in the "deps" directory
@@ -306,5 +340,38 @@ then
     exit 1
 fi
 
+
+echo "[INFO] Set up netgauge..."
+# Checks if the netgauge source code is in the "deps" directory
+if [ ! -d "deps/netgauge" ]; then
+    echo "[INFO] netgauge source code not found in the 'deps' directory."
+    echo "[INFO] Downloading netgauge source code ..."
+    wget https://htor.inf.ethz.ch/research/netgauge/netgauge-2.4.6.tar.gz
+    tar -xvf netgauge-2.4.6.tar.gz
+    # Moves the source code to the "deps" directory
+    mv netgauge-2.4.6 deps/netgauge
+    rm netgauge-2.4.6.tar.gz
+fi
+# Compiles netgauge
+echo "[INFO] Compiling netgauge ..."
+cd deps/netgauge
+./configure CC=$MPICC LIBS="-lpthread"
+if [ $? -ne 0 ]; then
+    echo "[ERROR] netgauge configuration failed."
+    exit 1
+fi
+make -j$JOBS
+if [ $? -ne 0 ]; then
+    echo "[ERROR] netgauge compilation failed."
+    exit 1
+fi
+export PATH=$PWD:$PATH
+# Makes sure that the compilation was successful
+# Asserts that netgauge is in the PATH
+if ! command -v netgauge &> /dev/null
+then
+    echo "[ERROR] netgauge could not be found."
+    exit 1
+fi
 
 echo "[INFO] All setup: SUCCESS"

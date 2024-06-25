@@ -17,38 +17,6 @@ export CXX=g++
 export FC=gfortran
 export MPICC=mpicc
 
-
-# echo "[INFO] Set up UCX ..."
-# # Asserts that the UCX source code is in the "validation" directory
-# if [ ! -d "validation/ucx" ]; then
-#     echo "[ERROR] UCX source code not found in the 'validation' directory."
-#     exit 1
-# fi
-# # Compiles UCX
-# echo "[INFO] Compiling UCX ..."
-# cd validation/ucx
-# ./autogen.sh
-# ./configure CC=$CC CXX=$CXX --prefix=$UCX_INSTALL_DIR
-# if [ $? -ne 0 ]; then
-#     echo "[ERROR] UCX configuration failed."
-#     exit 1
-# fi
-# # Copies the changed source files
-# cp ../latency-injector/ucx-src/ucp.h src/ucp/api/
-# cp ../latency-injector/ucx-src/ucp_request.h ../latency-injector/ucx-src/ucp_request.inl src/ucp/core/
-# cp ../latency-injector/ucx-src/tag_match.c ../latency-injector/ucx-src/tag_match.inl ucx-src/tag_recv.c src/ucp/tag/
-
-# make -j$JOBS
-# # Makes sure that the compilation was successful
-# if [ $? -ne 0 ]; then
-#     echo "[ERROR] UCX compilation failed."
-#     exit 1
-# fi
-# make install
-# if [ $? -ne 0 ]; then
-#     echo "[ERROR] UCX installation failed."
-#     exit 1
-# fi
 export LD_LIBRARY_PATH=$UCX_INSTALL_DIR/lib:$LD_LIBRARY_PATH
 export PATH=$UCX_INSTALL_DIR/bin:$PATH
 # Makes sure that the installation was successful
@@ -75,6 +43,17 @@ export LIBALLPROF2_F77=$PWD/liballprof2/liballprof2_f77.so
 export PATH=$PWD/Schedgen:$PATH
 export PATH=$PWD/LogGOPSim:$PATH
 
+export GUROBI_HOME=$PWD/deps/gurobi/linux64
+export PATH=$GUROBI_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$GUROBI_HOME/lib:$LD_LIBRARY_PATH
+
+# Makes sure that the installation was successful
+# Asserts that gurobi_cl is in the PATH
+if ! command -v gurobi_cl &> /dev/null
+then
+    echo "[ERROR] gurobi_cl could not be found."
+    exit 1
+fi
 
 export PATH=$AUTOCONF_INSTALL_DIR/bin:$PATH
 # Makes sure that the installation was successful

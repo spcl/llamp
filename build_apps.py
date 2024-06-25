@@ -124,11 +124,21 @@ def build_npb(jobs: int = 1,
     
     benchmarks = ["ft", "mg", "sp", "lu", "bt", "is", "ep", "cg", "ua"]
     # Updates the suite configuration file with the benchmarks
+    CLASS = "C"
     with open("config/suite.def", "w") as file:
         for benchmark in benchmarks:
-            # CLASS C
-            file.write(f"{benchmark} C\n")
-    
+            file.write(f"{benchmark}\t{CLASS}\n")
+
+    # Compiles ft separately
+    if os.system(f"make ft CLASS={CLASS}") != 0:
+        print_error("Failed to build the benchmark 'ft'")
+        return False
+        
+    # Executes the command 'make clean'
+    if os.system("make clean") != 0:
+        print_error("Failed to clean the directory")
+        return False
+
     # Executes the command to build the benchmark
     if os.system(f"make suite -j {jobs}") != 0:
         print_error("Failed to build the benchmark")
@@ -138,8 +148,6 @@ def build_npb(jobs: int = 1,
     os.chdir("../../")
 
     return True
-
-
 
 
 def build_hpcg(jobs: int = 1,

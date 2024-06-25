@@ -6,8 +6,6 @@ import psutil
 from subprocess import run, PIPE, TimeoutExpired
 from typing import Union
 from time import time
-from ortools.linear_solver.python import model_builder
-from ortools.linear_solver import pywraplp
 import gurobipy as gp
 
 """
