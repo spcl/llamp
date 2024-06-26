@@ -2,6 +2,7 @@ import argparse
 import os
 from typing import List, Optional
 from subprocess import run, PIPE, TimeoutExpired
+from utils import *
 
 
 def collect_traces(trace_dir: str, project: str, command: str, icon: bool,
@@ -91,13 +92,14 @@ def collect_traces(trace_dir: str, project: str, command: str, icon: bool,
 
 
 def convert_trace_to_goal(project: str, trace_dir: str, project_dir: str,
-                           verbose: bool = False) -> None:
+                           verbose: bool = False) -> str:
     """
     Converts the MPI traces to a goal file.
     @param project: Name of the project.
     @param trace_dir: Path to the directory where the traces are saved.
     @param project_dir: Path to the project directory.
     @param verbose: Flag to enable verbose mode.
+    @return The path to the goal file
     """
     if verbose:
         print(f"[INFO] Converting MPI traces to a graph for project {project}...", flush=True)
@@ -139,13 +141,16 @@ def convert_trace_to_goal(project: str, trace_dir: str, project_dir: str,
     if verbose:
         print(f"[INFO] Generated goal file: {goal_file}")
         print(f"[INFO] Generated comm_dep file: {comm_dep_file}", flush=True)
+    
+    return goal_file
 
 
 
 def convert_goal_to_lp(project: str, proj_dir: str, out_dir: str,
                        o_val: int,
                        G_val: float, S_val: Optional[int],
-                       topology: str, verbose: bool) -> None:
+                       topology: str, save_graph: bool,
+                       verbose: bool) -> None:
     """
     Converts the goal file to an LP model.
     """
@@ -162,7 +167,15 @@ def convert_goal_to_lp(project: str, proj_dir: str, out_dir: str,
     S_arg = f"-S {S_val}" if S_val else ""
     v_arg = "-v" if verbose else ""
     lp_file = f"{out_dir}/{project}.lp"
-    lp_gen_command = f"python3 {main_script} -g {goal_file} -c {comm_dep_file} -o {o_val} -G {G_val} {S_arg} --topology {topology} {v_arg} --export-lp-model-path {lp_file}"
+    
+    if save_graph:
+        graph_path = f"{out_dir}/{project}.pkl"
+        save_graph_arg = f"--export-graph-path {graph_path}"
+    else:
+        save_graph_arg = ""
+
+
+    lp_gen_command = f"python3 {main_script} -g {goal_file} -c {comm_dep_file} -o {o_val} -G {G_val} {S_arg} --topology {topology} {v_arg} --export-lp-model-path {lp_file} {save_graph_arg}"
     if verbose:
         print("[INFO] Converting goal file to LP model...")
         print(f"[INFO] Command to run: {lp_gen_command}")
@@ -215,11 +228,18 @@ if __name__ == "__main__":
                         help="Specify the G in the LogGPS model. [DEFAULT: 0.018]")
     parser.add_argument("-S", dest="S", default=None, type=int,
                         help="Specify the S in the LogGPS model. [DEFAULT: None]")
+    parser.add_argument("--netparam_file", dest="netparam_file", type=str, default=None,
+                        help="Path to the network parameters file. If provided, "
+                        "will ignore the o, G arguments and use the values from "
+                        "the file. [DEFAULT: None]")
     parser.add_argument("--topology", dest="topology", choices=["default", "fat_tree", "dragonfly"],
                         required=False, default="default",
                         help="If given, will use the specified network topology to be used in the model.")
     parser.add_argument("-s", "--skip-tracing", action="store_true",
                         help="Flag to skip the tracing and only convert the goal file to LP model.")
+    parser.add_argument("--save-graph", action="store_true",
+                        help="Flag to save the intermediate MPI exeuction graph that "
+                        "is used to generate the LP in the output directory.")
         
     args = parser.parse_args()
 
@@ -282,9 +302,23 @@ if __name__ == "__main__":
         print(f"[INFO] Traces saved to {trace_dir}", flush=True)
     
     # Converts the MPI traces to goal
-    convert_trace_to_goal(args.project, trace_dir, proj_dir, args.verbose)
+    goal_file = convert_trace_to_goal(args.project, trace_dir, proj_dir, args.verbose)
+
+    if args.netparam_file is not None:
+        assert os.path.exists(args.netparam_file), f"[ERROR] Netparam file does not exist: {args.netparam_file}"
+        # Calculates the average message size from the goal file
+        avg_message_size = get_avg_message_size(goal_file)
+        if verbose:
+            print(f"[INFO] Average message size: {avg_message_size} bytes")
+        # Reads the network parameters from the netparam file
+        L, o, G = get_net_params(avg_message_size, args.netparam_file)
+    else:
+        L = args.o
+        o = args.o
+        G = args.G
 
     # Converts the goal file to LP model
     convert_goal_to_lp(args.project, proj_dir, out_dir,
-                       args.o, args.G, args.S, args.topology, args.verbose)
+                       L, o, G, args.topology, args.save_graph,
+                       args.verbose)
     exit(0)

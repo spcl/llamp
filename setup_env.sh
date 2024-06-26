@@ -91,3 +91,10 @@ then
     echo "[ERROR] nf-config could not be found."
     exit 1
 fi
+
+export PATH=$PWD/deps/netgauge/:$PATH
+if ! command -v netgauge &> /dev/null
+then
+    echo "[ERROR] netgauge could not be found."
+    exit 1
+fi

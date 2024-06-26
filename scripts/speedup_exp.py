@@ -18,14 +18,22 @@ over a number of selected benchmarks. This is used to reproduce the
 results from figure 7 in the LLAMP paper.
 """
 
-def collect_data(data_dir: str, size_param: str, verbose: bool) -> None:
+def collect_data(data_dir: str, size_param: str,
+                 hostfile: Optional[str], verbose: bool) -> None:
     """
     Collects the traces from NPB benchmarks LULESH and LAMMPS
     """
+    if verbose:
+        print(f"[INFO] Using size parameter: {size_param}", flush=True)
+        print(f"[INFO] hostfile: {hostfile}", flush=True)
+
+    hostfile_arg = f"-f {hostfile}" if hostfile is not None else ""
+    mpirun_args = f"{hostfile_arg} --envall"
+
     os.environ["OMP_NUM_THREADS"] = "1"
+    os.environ["INJECTED_LATENCY"] = "0"
     # Collect traces for NPB
     npb_benchmarks = [ "ep", "mg", "ft", "cg", "bt", "sp", "lu" ]
-
     if size_param == "test":
         CLASS = "A"
         np = 16
@@ -36,7 +44,7 @@ def collect_data(data_dir: str, size_param: str, verbose: bool) -> None:
     v_arg = "-v" if verbose else ""
     for benchmark in npb_benchmarks:
         benchmark_name = f"{benchmark}.{CLASS}.x"
-        command = f"mpirun -np {np} ../apps/NPB3.4.3/NPB3.4-MPI/bin/{benchmark_name}"
+        command = f"mpirun {mpirun_args} -np {np} ../apps/NPB3.4.3/NPB3.4-MPI/bin/{benchmark_name}"
         out_dir = f"{data_dir}/{benchmark_name}"
         if os.path.exists(out_dir):
             print(f"[INFO] Deleting trace directory: {out_dir}")
@@ -45,6 +53,7 @@ def collect_data(data_dir: str, size_param: str, verbose: bool) -> None:
         # Uses the script lp_gen.py to generate the LP file
         # for the given benchmark
         lp_gen_command = f'python3 lp_gen.py -c "{command}" -p {benchmark_name} {v_arg} --f77 --timeout 600'
+        print(f"[INFO] Running command: {lp_gen_command}")
         if os.system(lp_gen_command) != 0:
             print(f"[ERROR] Failed to generate LP file for {benchmark_name}")
             exit(1)
@@ -61,13 +70,14 @@ def collect_data(data_dir: str, size_param: str, verbose: bool) -> None:
         np = 216
     
     assert os.path.exists("../apps/lulesh/build/lulesh2.0"), "[ERROR] LULESH does not exist"
-    command = f"mpirun -np {np} ../apps/lulesh/build/lulesh2.0 -i 1000 -s 8"
+    command = f"mpirun {mpirun_args} -np {np} ../apps/lulesh/build/lulesh2.0 -i 1000 -s 8"
     out_dir = f"{data_dir}/lulesh"
     if os.path.exists(out_dir):
         print(f"[INFO] Deleting trace directory: {out_dir}")
         os.system(f"rm -rf {out_dir}")
 
     lp_gen_command = f'python3 lp_gen.py -c "{command}" -p lulesh -v --timeout 600'
+    print(f"[INFO] Running command: {lp_gen_command}")
     if os.system(lp_gen_command) != 0:
         print(f"[ERROR] Failed to generate LP file for LULESH")
         exit(1)
@@ -105,13 +115,15 @@ def collect_data(data_dir: str, size_param: str, verbose: bool) -> None:
         print("[ERROR] Failed to replace line 5 in in.eam")
         exit(1)
     
-    command = f"mpirun -np {np} {lammps_dir}build/lmp -in {lammps_dir}bench/in.eam"
+    command = f"mpirun {mpirun_args} -np {np} {lammps_dir}build/lmp -in {lammps_dir}bench/in.eam"
+
     out_dir = f"{data_dir}/lammps"
     if os.path.exists(out_dir):
         print(f"[INFO] Deleting trace directory: {out_dir}")
         os.system(f"rm -rf {out_dir}")
     
     lp_gen_command = f'python3 lp_gen.py -c "{command}" -p lammps -v --timeout 600'
+    print(f"[INFO] Running command: {lp_gen_command}")
     if os.system(lp_gen_command) != 0:
         print(f"[ERROR] Failed to generate LP file for LAMMPS")
         exit(1)
@@ -199,129 +211,6 @@ def test_speed(data_dir: str, verbose: bool) -> None:
     res_file.close()
 
 
-def plot_results(data_dir: str, verbose: bool) -> None:
-    """
-    Plots the results from the speedup test
-    """
-    res_file_path = f"{data_dir}/speedup_results.csv"
-    assert os.path.exists(res_file_path), f"[ERROR] Results file does not exist: {res_file_path}"
-    df = pd.read_csv(res_file_path)
-
-    def log10(x):
-        return np.log10(x)
-    
-    # Calculates the average speedup of Gurobi over LogGOPSim
-    speedups = {}
-    # Groups the dataframe by benchmark and method
-    grouped = df.groupby(["benchmark", "method"])
-    benchmarks = df["benchmark"].unique()
-    x_axis_labels = benchmarks
-    for name, group in grouped:
-        benchmark, method = name
-        if method == "gurobi":
-            gurobi_time = group["runtime"].mean()
-        else:
-            loggopsim_time = group["runtime"].mean()
-            speedup = loggopsim_time / gurobi_time
-            speedups[benchmark] = speedup
-    
-    # Change the value of "method" column to "Gurobi" or "LogGOPSim"
-    df["method"] = df["method"].apply(lambda x: "Gurobi Solver" if x == "gurobi" else "LogGOPSim")
-    gurobi_runtimes = []
-    loggopsim_runtimes = []
-    for benchmark in benchmarks:
-        gurobi_runtimes.append(df[(df["benchmark"] == benchmark) & (df["method"] == "Gurobi Solver")]["runtime"].mean())
-        loggopsim_runtimes.append(df[(df["benchmark"] == benchmark) & (df["method"] == "LogGOPSim")]["runtime"].mean())
-
-    # Reorders the speedup values according to the benchmarks
-    speedups = [speedups[benchmark] for benchmark in benchmarks]
-    # Plots a bar chart with seaborn in log scale
-    # palette = sns.color_palette("pastel")
-    palette = ["#0E8A7D", "#92BA51"]
-
-    # Plots the barplot with matplotlib
-    plt.figure(figsize=(13, 3.5))
-    # Enabels gridline
-    plt.grid(True, axis='y', zorder=0)
-    # Move gridline to the background
-    plt.gca().set_axisbelow(True)
-    # Fetches the mean runtime of Gurobi and LogGOPSim from mean_runtimes
-    bar_width = 0.4
-    fontsize = 14
-    br1 = np.arange(len(gurobi_runtimes))
-    br2 = [x + bar_width for x in br1]
-    # Plots the average runtime of Gurobi and LogGOPSim together
-    plt.bar(br1, gurobi_runtimes, label="LLAMP", width=bar_width, color=palette[0])
-    plt.bar(br2, loggopsim_runtimes, label="LogGOPSim", width=bar_width, color=palette[1])
-
-    # Adds the average runtime of Gurobi and LogGOPSim on top of the bars
-    for i, runtime in enumerate(gurobi_runtimes):
-        if runtime > 100:
-            text = f"{runtime:.0f}"
-        elif runtime > 1:
-            text = f"{runtime:.1f}"
-        else:
-            text = f"{runtime:.2f}"
-        if runtime > 1:
-            plt.text(i, runtime + 0.1, text, ha='center', va='bottom')
-        else:
-            plt.text(i, runtime + 0.01, text, ha='center', va='bottom')
-    for i, runtime in enumerate(loggopsim_runtimes):
-        if runtime > 100:
-            text = f"{runtime:.0f}"
-        elif runtime > 1:
-            text = f"{runtime:.1f}"
-        else:
-            text = f"{runtime:.2f}"
-        if runtime > 1:
-            plt.text(i + bar_width, runtime + 0.1, text, ha='center', va='bottom')
-        else:
-            plt.text(i + bar_width, runtime + 0.01, text, ha='center', va='bottom')
-
-    # Plots an arrow that shows the difference between the two bars for each benchmark
-    for i, speedup in enumerate(speedups):
-        loggopsim_runtime = loggopsim_runtimes[i]
-        gurobi_runtime = gurobi_runtimes[i]
-        arrow_top = loggopsim_runtime
-        arrow_bot = gurobi_runtime
-        x = i + bar_width
-        # Uses two-headed arrow to plot the difference between the two bars
-        plt.annotate("", xy=(x, arrow_top), xytext=(x, arrow_bot),
-                    arrowprops=dict(arrowstyle='<->', lw=1, color="black"), 
-                    va='center', ha='center')
-        label_y = 10 ** ((log10(arrow_top) + log10(arrow_bot)) / 2) * 0.7
-        if speedup > 100:
-            text = f"{speedup:.0f}x"
-        else:
-            text = f"{speedup:.1f}x"
-        plt.text(x + 0.23, label_y, text, ha='center', va='bottom', color="#FF0510")
-
-    # Log scale
-    plt.yscale("log")
-    # Sets the x-axis labels
-    plt.xticks([r + bar_width / 2 for r in range(len(gurobi_runtimes))], x_axis_labels, rotation=0)
-    # Sets the y lim to 10^0 and 10^4
-    plt.ylim([10 ** -2, 10 ** 3.6])
-    # Sets the y-axis label to "Runtime [s]"
-    plt.ylabel("Runtime [s]", fontsize=fontsize)
-    # Sets x ticks to fontsize
-    plt.xticks(fontsize=fontsize)
-    plt.yticks(fontsize=fontsize)
-    # Sets the x-axis label to "Benchmark"
-    plt.xlabel("")
-    # Increase the font size of the axis labels
-    plt.rcParams.update({'font.size': fontsize})
-    # Remove legend border
-    legend = plt.legend(title="", ncol=2, loc='upper left', columnspacing=0.5, fontsize=fontsize)
-    # legend.get_frame().set_linewidth(0.0)
-    plt.tight_layout()
-    # Sets frameon=False
-
-    plt.savefig(f"{data_dir}/speedup.png", bbox_inches='tight')
-    plt.savefig(f"{data_dir}/speedup.pdf", bbox_inches='tight')
-    print(f"[INFO] Speedup plot saved to {data_dir}/speedup.png and {data_dir}/speedup.pdf")
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Speedup script")
     parser.add_argument("-d", "--data-dir", type=str, default="speedup_data",
@@ -331,25 +220,23 @@ if __name__ == "__main__":
                         help="Size of the parameters to run for the applications. Options are 'test' and 'paper' "\
                             "where 'test' runs the applications with a small input size and 'paper' runs the applications "\
                             "with a large input size. Default is 'test'.")
+    parser.add_argument('--hostfile', type=str, default=None,
+                        help='Path to the hostfile. If provided, will execute the applications on multiple hosts.')
 
     args = parser.parse_args()
 
     # Checks if the data directory exists
-    # if os.path.exists(args.data_dir):
-    #     # Deletes the directory
-    #     print(f"[INFO] Deleting data directory: {args.data_dir}")
-    #     os.system(f"rm -rf {args.data_dir}")
-    # print(f"[INFO] Creating data directory: {args.data_dir}")
-    # os.makedirs(args.data_dir)
+    if os.path.exists(args.data_dir):
+        # Deletes the directory
+        print(f"[INFO] Deleting data directory: {args.data_dir}")
+        os.system(f"rm -rf {args.data_dir}")
+    print(f"[INFO] Creating data directory: {args.data_dir}")
+    os.makedirs(args.data_dir)
 
-    # The script consists of 3 steps
+    # The script consists of 2 steps
     # 1. Collect trace data
     # 2. Run the speedup test for Gurobi and LogGOPSim
-    # 3. Generate the plot
-
-    # collect_data(args.data_dir, args.size, args.verbose)
+    collect_data(args.data_dir, args.size, args.hostfile, args.verbose)
     
     # Run the speedup test for Gurobi and LogGOPSim
-    # test_speed(args.data_dir, args.verbose)
-    # Plots the results
-    plot_results(args.data_dir, args.verbose)
+    test_speed(args.data_dir, args.verbose)
