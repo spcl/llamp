@@ -75,7 +75,7 @@ static void lap_collect_traces(void) {
     int trace_size = ftell(lap_fptr);
     fseek(lap_fptr, 0, SEEK_SET);
 
-    
+    printf("[DEBUG] Trace size: %i\n", trace_size);
     char trace_fname[PATH_MAX];
     char *env = getenv("HTOR_PMPI_FILE_PREFIX");
     if (env == NULL)
@@ -346,7 +346,7 @@ void FortranCInterface_GLOBAL(pmpi_info_get_nthkey,PMPI_INFO_GET_NTHKEY) (int* i
 void FortranCInterface_GLOBAL(pmpi_info_get_valuelen,PMPI_INFO_GET_VALUELEN) (int* info, char* key, int* valuelen, int* flag, int* ierr);
 void FortranCInterface_GLOBAL(pmpi_info_set,PMPI_INFO_SET) (int* info, char* key, char* value, int* ierr);
 void FortranCInterface_GLOBAL(pmpi_init,PMPI_INIT) (int* ierr);
-void FortranCInterface_GLOBAL(pmpi_init_thread,PMPI_INIT_THREAD) (int *argc, char ***argv, int required, int *provided);
+void FortranCInterface_GLOBAL(pmpi_init_thread,PMPI_INIT_THREAD) (int *required, int *provided, int *ierr);
 void FortranCInterface_GLOBAL(pmpi_initialized,PMPI_INITIALIZED) (int* flag, int* ierr);
 void FortranCInterface_GLOBAL(pmpi_intercomm_create,PMPI_INTERCOMM_CREATE) (int* local_comm, int* local_leader, int* bridge_comm, int* remote_leader, int* tag, int* newintercomm, int* ierr);
 void FortranCInterface_GLOBAL(pmpi_intercomm_merge,PMPI_INTERCOMM_MERGE) (int* intercomm, int* high, int* newintercomm, int* ierr);
@@ -5103,16 +5103,17 @@ void FortranCInterface_GLOBAL(mpi_init,MPI_INIT) (int* ierr) {
   WRITE_TRACE("# Current timestamp: %0.2f\n", curr_time * 1e6);
 }
 
-void FortranCInterface_GLOBAL(mpi_init_thread,MPI_INIT_THREAD) (int *argc, char ***argv, int required, int *provided) {
+void FortranCInterface_GLOBAL(mpi_init_thread,MPI_INIT_THREAD) (int *required, int *provided, int *ierr) {
   if (lap_tracing_enabled == 0) { 
-    int pmpi_retval; FortranCInterface_GLOBAL(pmpi_init_thread,PMPI_INIT_THREAD)(argc, argv, required, provided);
+    int pmpi_retval; FortranCInterface_GLOBAL(pmpi_init_thread,PMPI_INIT_THREAD)(required, provided, ierr);
     return;
   }
   lap_check();
   double curr_time;
   WRITE_TRACE("%s", "MPI_Init_thread:");
   WRITE_TRACE("%0.2f:", lap_mpi_initialized ? PMPI_Wtime()*1e6 : 0.0);
- FortranCInterface_GLOBAL(pmpi_init_thread,PMPI_INIT_THREAD)(argc, argv, required, provided);
+  // printf("[DEBUG] MPI_Init_thread\n", required, *provided);
+ FortranCInterface_GLOBAL(pmpi_init_thread,PMPI_INIT_THREAD)(required, provided, ierr);
   curr_time = PMPI_Wtime();
   WRITE_TRACE("%0.2f", lap_mpi_initialized ? PMPI_Wtime()*1e6 : 0.0);  if (lap_backtrace_enabled) {
     lap_get_full_backtrace(lap_backtrace_buf, LAP2_BACKTRACE_BUF_SIZE);

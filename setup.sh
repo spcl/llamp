@@ -129,8 +129,8 @@ if [ $? -ne 0 ]; then
     echo "[ERROR] liballprof2 compilation failed."
     exit 1
 fi
-export LIBALLPROF2_C=$PWD/liballprof2/liballprof2.so
-export LIBALLPROF2_F77=$PWD/liballprof2/liballprof2_f77.so
+export LIBALLPROF2_C=$PWD/liballprof2/liballprof.so
+export LIBALLPROF2_F77=$PWD/liballprof2/liballprof_f77.so
 echo "[INFO] liballprof2 setup: SUCCESS"
 
 echo "[INFO] Set up Schedgen"
@@ -373,5 +373,7 @@ then
     echo "[ERROR] netgauge could not be found."
     exit 1
 fi
+
+pip install -r requirements.txt
 
 echo "[INFO] All setup: SUCCESS"

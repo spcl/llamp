@@ -308,6 +308,12 @@ def build_milc(jobs: int = 1,
     # Changes the directory to the ROOT directory of MILC
     os.chdir("../../")
 
+    # Replaces line 403 in the generic/com_qmp.c file with the following:
+    # '  if(provided < required){'
+    if os.system("sed -i '403s/.*/  if(provided < required){/' generic/com_qmp.c") != 0:
+        print_error("Failed to replace line 402 in the com_qmp.c file")
+        return False
+
     # Replaces line 28 in the Makefile with the following:
     # MPP ?= true
     if os.system("sed -i '28s/.*/MPP ?= true/' Makefile") != 0:
@@ -335,7 +341,7 @@ def build_milc(jobs: int = 1,
     # Replaces line 302 in the Makefile with the following:
     # TAG=/install
     if os.system("sed -i '302s/.*/TAG=\/install/' Makefile") != 0:
-        print_error("Failed to replace line 302 in the Makefile")
+        print_error("Failed to replace line 302 in the Makefile")   
         return False
 
     # Copies the Makefile to the directory ks_imp_dyn
@@ -345,15 +351,17 @@ def build_milc(jobs: int = 1,
     
     # Changes the directory to `ks_imp_dyn`
     os.chdir("ks_imp_dyn")
+
+    # Checks if reunitarize_ks.o already exists in the file Make_template
+    # If it does not exist, inserts the following line to line 46 of Make_template
+    # '  reunitarize_ks.o \'
+    if os.system("grep -q reunitarize_ks.o Make_template || sed -i '46i\\  reunitarize_ks.o \\\\' Make_template") != 0:
+        print_error("Failed to insert the line 'reunitarize_ks.o' to Make_template")
+        return False
+
     # Runs the command "make clean"
     if os.system("make clean") != 0:
         print_error("Failed to clean the directory")
-        return False
-
-    # Inserts the following line to line 46 of Make_template
-    # '  reunitarize_ks.o \'
-    if os.system("sed -i '46i\\  reunitarize_ks.o \\\\' Make_template") != 0:
-        print_error("Failed to insert a line to Make_template")
         return False
 
     # Runs the command "make su3_rmd" to build the application
@@ -362,6 +370,42 @@ def build_milc(jobs: int = 1,
         return False
 
     assert os.path.exists("su3_rmd"), "su3_rmd executable does not exist"
+
+    os.chdir("../")
+
+    print("[INFO] Downloading dataset...")
+    # Checks if the directory "lattices" exists
+    if os.path.exists("lattices"):
+        # Removes the directory "lattices"
+        if os.system("rm -rf lattices") != 0:
+            print_error("Failed to remove the lattices directory")
+            return False
+    
+    os.mkdir("lattices")
+    # Changes the directory to "lattices"
+    os.chdir("lattices")
+
+    # Downloads the lattice file from
+    # https://portal.nersc.gov/project/m888/apex/MILC_lattices/16x16x16x16.chklat
+    if os.system("wget https://portal.nersc.gov/project/m888/apex/MILC_lattices/16x16x16x16.chklat") != 0:
+        print_error("Failed to download the lattice file")
+        return False
+    # Stores the absolute path of the lattice file in a variable
+    lattice_file = os.path.abspath("16x16x16x16.chklat")
+    assert os.path.exists("16x16x16x16.chklat"), "Lattice file does not exist"
+    os.chdir("../")
+    # Prints the current working directory
+    print(f"[INFO] Current working directory: {os.getcwd()}")
+    # Inserts a '\' in front of every '/' in lattice_file
+    lattice_file = lattice_file.replace("/", "\/")
+    # Changes line 25 of the configuration file ../../validation/milc/milc.in
+    # to the following:
+    # reload_parallel $lattice_file
+    if os.system(f"sed -i '25s/.*/reload_parallel {lattice_file}/' ../../validation/milc/milc.in") != 0:
+        print_error("Failed to replace line 25 in the configuration file")
+        return False
+
+    os.chdir("../../")
     return True
 
 
@@ -417,6 +461,65 @@ def build_icon(jobs: int = 1,
         return False
     
     assert os.path.exists("bin/icon"), "icon executable does not exist"
+
+    # Records the current working directory
+    icon_dir = os.getcwd()
+
+    # Checks if the directory 'data' exists
+    if os.path.exists("data"):
+        # Removes the directory 'data'
+        if os.system("rm -rf data") != 0:
+            print_error("Failed to remove the data directory")
+            return False
+    os.mkdir("data")
+
+    # Checks if the directory 'results' exists
+    if os.path.exists("results"):
+        # Removes the directory 'results'
+        if os.system("rm -rf results") != 0:
+            print_error("Failed to remove the results directory")
+            return False
+    os.mkdir("results")
+
+
+    # Checks if the directory "ozone" exists
+    if os.path.exists("ozone"):
+        # Removes the directory "ozone"
+        if os.system("rm -rf ozone") != 0:
+            print_error("Failed to remove the ozone directory")
+            return False
+    os.mkdir("ozone")
+
+    # Copies the grid files from ../../case-studies/icon/data to the appropriate directories
+    if os.system("cp ../../case-studies/icon/data/icon_grid* data/") != 0:
+        print_error("Failed to copy the grid files")
+        return False
+
+    if os.system("cp ../../case-studies/icon/data/bc_ozone* ozone/") != 0:
+        print_error("Failed to copy the boundary condition files")
+        return False
+
+    # Changes all the '/' in icon_dir to '\/' in the path
+    icon_dir = icon_dir.replace("/", "\/")
+    # Changes the directory to the validation directory
+    os.chdir("../../validation/icon")
+    # Changes line 106 of the file run-icon.sh to the following:
+    # 'basedir=$icon_dir'
+    if os.system(f"sed -i '106s/.*/basedir={icon_dir}/' run-icon.sh") != 0:
+        print_error("Failed to replace line 106 in the file run-icon.sh")
+        return False
+    
+    # Changes line 110 of the file run-icon.sh to the following:
+    # 'experiments_dir=$basedir\/results'
+    if os.system(f"sed -i '110s/.*/experiments_dir=$basedir\/results/' run-icon.sh") != 0:
+        print_error("Failed to replace line 110 in the file run-icon.sh")
+        return False
+    
+    # Changes line 112 of the file run-icon.sh to the following:
+    # 'data_dir=$basedir\/data'
+    if os.system(f"sed -i '112s/.*/icon_data_rootFolder=$basedir\/data/' run-icon.sh") != 0:
+        print_error("Failed to replace line 112 in the file run-icon.sh")
+        return False
 
     # Changes the directory to the parent directory
     os.chdir("../")

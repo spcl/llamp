@@ -35,7 +35,7 @@ class NetLatSensitivity(object):
         """
         Saves the network latency sensitivity metric to a CSV file.
         """
-        csv_file = f"{output_dir}/{name}_netlat_sensitivity.csv"
+        csv_file = f"{output_dir}/{name}_lat_sensitivity.csv"
         with open(csv_file, "w") as f:
             f.write("L,sensitivity\n")
             for L, val in self.critical_latencies:

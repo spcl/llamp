@@ -27,9 +27,6 @@ if __name__ == "__main__":
                         "records the dependencies between all the sends and recvs. "
                         "Will attempt to match the sends and recvs in the goal file "
                         "simply by message tags if this file is not given.")
-    parser.add_argument("--dep_graph_file", dest="dep_graph_file",
-                        help="Path to the file that will store the generated "
-                        "dependency graph.")
     parser.add_argument("--mpich", dest="mpich", action="store_true",
                         default=False, help="If given, will formulate the "
                         "linear programming model that corresponds to the "
@@ -293,3 +290,5 @@ if __name__ == "__main__":
             raise ValueError(f"[ERROR] Invalid analysis type: {args.analysis}")
             
         print("[INFO] Analysis completed.", flush=True)
+
+        exit(0)
