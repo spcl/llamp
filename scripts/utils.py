@@ -1,9 +1,9 @@
 import os
-import pandas as pd
 import warnings
+warnings.filterwarnings("ignore")
+import pandas as pd
 from subprocess import run, PIPE
 from typing import Optional, List, Tuple
-warnings.filterwarnings("ignore")
 
 """
 Utility functions used by the scripts in this directory.
@@ -67,9 +67,9 @@ def get_net_params(s: int, netparam_file: str = "netparams.csv") -> Tuple:
     row = df.iloc[(df["s"] - s).abs().argsort()[:1]]
     L = row["L"].values[0]
     o = row["o"].values[0]
-    # G is the smallest positivie G across the rows after the frist 3 rows
+    # G is the average G value across the rows after the frist 3 rows
     # Makes sure that G is positive
-    G = df["G"].values[3:].min()
+    G = df["G"].values[3:].mean()
     assert G > 0, "[ERROR] Invalid value for G"
     return L, o, G
 
@@ -92,4 +92,73 @@ def get_avg_message_size(goal_file: str) -> int:
 
 
 
-def 
+def get_baseline_runtime(runtime_file: str) -> float:
+    """
+    Returns the predicted baseline runtime for the model, i.e., predicted
+    runtime of the program when the injected L is 0.
+    """
+    df = pd.read_csv(runtime_file)
+    # Returns the value of runtime with the smallest L
+    return df["runtime"].min()
+
+
+
+
+def choose_schedgen_allreduce_algorithm(schedgen_dir: str,
+                                        allreduce_alg: str = "recdoub") -> None:
+    """
+    Chooses the allreduce algorithm used by Schedgen to produce
+    the execution graph. The options are 'recdoub' and 'ring'.
+    This requires recompiling 'schedgen' inside the 'schedgen_dir' directory.
+    """
+    assert allreduce_alg in ["recdoub", "ring"], \
+        f"[ERROR] Invalid allreduce algorithm: {allreduce_alg}"
+    
+    # Makes sure that the file 'process_trace.cpp' exists
+    # in the 'schedgen_dir' directory
+    process_trace_file = f"{schedgen_dir}/process_trace.cpp"
+    assert os.path.exists(process_trace_file), \
+        f"[ERROR] process_trace.cpp does not exist: {process_trace_file}"
+    
+    # If 'recdoub' is chosen, comments out line 1333 and 
+    # uncomments line 1334 in 'process_trace.cpp' using sed
+    if allreduce_alg == "recdoub":
+        # Checks if line 1333 is already commented out, if it is not,
+        # comments out line 1333 and uncomments line 1334 in 'process_trace.cpp' using sed
+        command = f"sed -n '1333p' {process_trace_file} | grep '//'"
+        proc = run(command, shell=True, stdout=PIPE, stderr=PIPE)
+        if proc.returncode == 1:
+            if os.system(f"sed -i '1333s/^/\\/\\//' {process_trace_file}") != 0:
+                print(f"[ERROR] Failed to comment out line 1333 in {process_trace_file}")
+                exit(1)
+            if os.system(f"sed -i '1334s|//||' {process_trace_file}") != 0:
+                print(f"[ERROR] Failed to uncomment line 1334 in {process_trace_file}")
+                exit(1)
+    else:
+        # If 'ring' is chosen, comments out line 1334 and
+        # uncomments line 1333 in 'process_trace.cpp' using sed
+        command = f"sed -n '1334p' {process_trace_file} | grep '//'"
+        proc = run(command, shell=True, stdout=PIPE, stderr=PIPE)
+        # Checks if line 1334 is already commented out, if it is not,
+        # comments out line 1334 and uncomments line 1333 in 'process_trace.cpp' using sed
+        
+        if proc.returncode == 1:
+            if os.system(f"sed -i '1334s/^/\\/\\//' {process_trace_file}") != 0:
+                print(f"[ERROR] Failed to comment out line 1334 in {process_trace_file}")
+                exit(1)
+            if os.system(f"sed -i '1333s|//||' {process_trace_file}") != 0:
+                print(f"[ERROR] Failed to uncomment line 1333 in {process_trace_file}")
+                exit(1)
+    
+    # Recompiles 'schedgen'
+    # Changes the current directory to 'schedgen_dir'
+    os.chdir(schedgen_dir)
+    if os.system("make clean") != 0:
+        print(f"[ERROR] Failed to clean schedgen")
+        exit(1)
+    if os.system("make") != 0:
+        print(f"[ERROR] Failed to compile schedgen")
+        exit(1)
+
+    assert os.path.exists("schedgen"), "[ERROR] schedgen does not exist"
+    print(f"[INFO] Successfully compiled schedgen with {allreduce_alg} algorithm")

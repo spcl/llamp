@@ -271,7 +271,7 @@ CONTAINS
         &                       latbc             = latbc,       &
         &                       restartDescriptor = restartDescriptor )
     ENDIF
-
+    print *, "[DEBUG] Total runtime: ", MPI_WTIME() - start_time
     CALL MPI_PCONTROL(0)
     CALL deleteRestartDescriptor(restartDescriptor)
 

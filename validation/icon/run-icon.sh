@@ -33,7 +33,7 @@ builder=generalgcc
 #
 # OpenMP environment variables
 # ----------------------------
-export OMP_NUM_THREADS=16
+export OMP_NUM_THREADS=1
 export ICON_THREADS=1
 export OMP_SCHEDULE=static,1
 export OMP_DYNAMIC="false"
@@ -52,16 +52,35 @@ output_file="/scratch/sshen/lgs-mpi-data/run.out"
 #     echo "Rankmap file: ${rankmap_file}"
 #     echo "Number of processes: ${num_procs}"
 # fi
-
-INJECTED_LATENCY=0
+# ====================== DEFAULT RUN COMMAND ======================
+export START="mpirun --envall -env INJECTED_LATENCY 0 -env MPICH_ASYNC_PROGRESS 1 -env UCX_RNDV_THRESH 256000 -env UCX_RC_VERBS_SEG_SIZE 256000 -env OMP_NUM_THREADS 4 -np 8"
+# Prints out the number of arguments
+echo "[DEBUG] Number of arguments: $#"
 if [ $# -eq 1 ]; then
-    num_procs="$1"
-elif [ $# -eq 2 ]; then
-    INJECTED_LATENCY="$2"
+  export START="$1"
 fi
 
-echo "[INFO] Number of processes: ${num_procs}"
-echo "[INFO] Injected latency: ${INJECTED_LATENCY}"
+sim_time="2000-01-01T00:30:00Z"
+if [ $# -eq 2 ]; then
+  export START="$1"
+  export sim_time="$2"
+fi
+echo "Run command: ${START}"
+echo "Simulation end time: ${sim_time}"
+# INJECTED_LATENCY=0
+# if [ $# -eq 1 ]; then
+#     num_procs="$1"
+# elif [ $# -eq 2 ]; then
+#     num_procs="$1"
+#     INJECTED_LATENCY="$2"
+# elif [ $# -eq 3 ]; then
+#     num_procs="$1"
+#     INJECTED_LATENCY="$2"
+#     export START="$3"
+# fi
+
+# echo "[INFO] Number of processes: ${num_procs}"
+# echo "[INFO] Injected latency: ${INJECTED_LATENCY}"
 
 
 # export LD_PRELOAD=/users/sshen/workspace/lgs-mpi/liballprof/.libs/liballprof_f77.so
@@ -103,13 +122,13 @@ export EXPNAME="aquaplanet_04"
 # directories with absolute paths
 # -------------------------------
 thisdir=$(pwd)
-basedir="/scratch/sshen/icon/icon-src"
+basedir=/home/sishen/workspace/llamp/apps/icon
 echo $basedir
 # experiments_dir can be predefined in a machine specific run_target_* header
 #experiments_dir="${experiments_dir:=${basedir}/experiments}"
-experiments_dir="/scratch/sshen/icon/results"
+experiments_dir=$basedir/results
 # export ${basedir}
-icon_data_rootFolder="/scratch/sshen/icon/data"
+icon_data_rootFolder=$basedir/data
 # Round robin option
 if [ -z "$rankmap_file" ]; then
     # If the rankmap file is not provided by the user
@@ -141,7 +160,7 @@ fi
 # rank_file="/users/sshen/workspace/run_scripts/icon_rank"
 # export START="${MPIRUN} -np $mpi_procs_pernode -rf ${rank_file}"
 
-export START="mpirun --envall -env INJECTED_LATENCY ${INJECTED_LATENCY} -env MPICH_ASYNC_PROGRESS 1 -env UCX_RNDV_THRESH 256000 -env UCX_RC_VERBS_SEG_SIZE 256000 -env OMP_NUM_THREADS 16 -f /scratch/sshen/lgs-mpi-data/hosts -np $num_procs"
+# export START="mpirun --envall -env INJECTED_LATENCY ${INJECTED_LATENCY} -env MPICH_ASYNC_PROGRESS 1 -env UCX_RNDV_THRESH 256000 -env UCX_RC_VERBS_SEG_SIZE 256000 -env OMP_NUM_THREADS 4 -np $num_procs"
 # export HOSTS=/scratch/sshen/lgs-mpi/case-studies/icon/hosts16_openmpi
 # export MPIRUN=`which mpirun`
 # export NUM_RANKS=32
@@ -199,8 +218,9 @@ atmo_dyn_grids="'${grid_name}.nc',"
 # horizontal grid(s)
 grids_folder=${icon_data_rootFolder}
 # start and end date+time
+
 start_date=${start_date:="2000-01-01T00:00:00Z"}
-            end_date=${end_date:="2000-01-01T02:30:00Z"}
+            end_date=${end_date:="${sim_time}"}
 
 calendar="360 day year"
 
@@ -361,7 +381,7 @@ divdamp_fac      = 0.004
 ! aes_mig_config(1)%zvz0i          = 3.29  ! Terminal fall velocity of ice  (original value of Heymsfield+Donner 1990: 3.29)
 /
 &aes_cov_nml
- aes_cov_config(1)%icov       = 3     ! 0/1 cloud cover based on cloud water and ice
+ ! aes_cov_config(1)%icov       = 0     ! 0/1 cloud cover based on cloud water and ice
  aes_cov_config(1)%cqx        = 1.e-6
 /
 EOF

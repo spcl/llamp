@@ -20,6 +20,7 @@ RES_FILE_NAMES = ["_lat_ratio.csv", "_lat_sensitivity.csv", "_lat_tolerance.csv"
 
 def generate_lp_lulesh(data_dir: str, size_param: str = 'test',
                        hostfile: Optional[str] = None,
+                       num_threads: int = 1,
                        verbose: bool = False) -> None:
     """
     Generates the LP files for LULESH
@@ -42,7 +43,7 @@ def generate_lp_lulesh(data_dir: str, size_param: str = 'test',
 
     hostfile_arg = f"-f {hostfile}" if hostfile is not None else ""
     mpirun_args = f"--envall {hostfile_arg} -env UCX_RC_VERBS_SEG_SIZE 256000 "\
-        "-env UCX_RNDV_THRESHOLD 256000 -env MPICH_ASYNC_PROGRESS 1"
+        f"-env UCX_RNDV_THRESHOLD 256000 -env MPICH_ASYNC_PROGRESS 1 -env OMP_NUM_THREADS {num_threads}"
     lulesh_exec = "../apps/lulesh/build/lulesh2.0"
     assert os.path.exists(lulesh_exec), "[ERROR] LULESH executable does not exist"
     for num_proc in num_procs:
@@ -68,6 +69,7 @@ def generate_lp_lulesh(data_dir: str, size_param: str = 'test',
         
 def generate_lp_hpcg(data_dir: str, size_param: str = 'test',
                      hostfile: Optional[str] = None,
+                     num_threads: int = 1,
                      verbose: bool = False) -> None:
     """
     Generates the LP files for HPCG
@@ -88,7 +90,7 @@ def generate_lp_hpcg(data_dir: str, size_param: str = 'test',
 
     hostfile_arg = f"-f {hostfile}" if hostfile is not None else ""
     mpirun_args = f"--envall {hostfile_arg} -env UCX_RC_VERBS_SEG_SIZE 256000 "\
-        "-env UCX_RNDV_THRESHOLD 256000 -env MPICH_ASYNC_PROGRESS 1"
+        f"-env UCX_RNDV_THRESHOLD 256000 -env MPICH_ASYNC_PROGRESS 1 -env OMP_NUM_THREADS {num_threads}"
     hpcg_exec = "../apps/hpcg/build/bin/xhpcg"
 
     assert os.path.exists(hpcg_exec), "[ERROR] HPCG executable does not exist"
@@ -121,6 +123,7 @@ def generate_lp_hpcg(data_dir: str, size_param: str = 'test',
 
 def generate_lp_milc(data_dir: str, size_param: str = 'test',
                      hostfile: Optional[str] = None,
+                     num_threads: int = 1,
                      verbose: bool = False) -> None:
     """
     Generates the LP files for MILC
@@ -139,7 +142,7 @@ def generate_lp_milc(data_dir: str, size_param: str = 'test',
 
     hostfile_arg = f"-f {hostfile}" if hostfile is not None else ""
     mpirun_args = f"--envall {hostfile_arg} -env UCX_RC_VERBS_SEG_SIZE 256000 "\
-        "-env UCX_RNDV_THRESHOLD 256000 -env MPICH_ASYNC_PROGRESS 1"
+        f"-env UCX_RNDV_THRESHOLD 256000 -env MPICH_ASYNC_PROGRESS 1 -env OMP_NUM_THREADS {num_threads}"
 
     milc_exec = "../apps/milc_qcd/ks_imp_dyn/su3_rmd"
     assert os.path.exists(milc_exec), "[ERROR] MILC executable does not exist"
@@ -172,14 +175,17 @@ def generate_lp_milc(data_dir: str, size_param: str = 'test',
 
 def generate_lp_icon(data_dir: str, size_param: str = 'test',
                      hostfile: Optional[str] = None,
+                     num_threads: int = 1,
                      verbose: bool = False) -> None:
     """
     Generates the LP files for ICON
     """
     if size_param == 'test':
         num_procs = [8, 16]
+        sim_time = "2000-01-01T00:30:00Z"
     else:
         num_procs = [8, 32, 64]
+        sim_time = "2000-01-01T06:00:00Z"
     
     v_arg = "-v" if verbose else ""
 
@@ -189,7 +195,8 @@ def generate_lp_icon(data_dir: str, size_param: str = 'test',
 
     hostfile_arg = f"-f {hostfile}" if hostfile is not None else ""
     mpirun_args = f"--envall {hostfile_arg} -env UCX_RC_VERBS_SEG_SIZE 256000 "\
-        "-env UCX_RNDV_THRESHOLD 256000 -env MPICH_ASYNC_PROGRESS 1 -env INJECTED_LATENCY 0"
+        "-env UCX_RNDV_THRESHOLD 256000 -env MPICH_ASYNC_PROGRESS 1 -env INJECTED_LATENCY 0 "\
+        f"-env OMP_NUM_THREADS {num_threads}"
     
     run_script = "../validation/icon/run-icon.sh"
     assert os.path.exists(run_script), "[ERROR] ICON run script does not exist"
@@ -201,7 +208,7 @@ def generate_lp_icon(data_dir: str, size_param: str = 'test',
             print(f"[INFO] LP file {lp_file} already exists. Skipping LP generation for {project_name}")
             continue
         print(f"[INFO] Running ICON with {num_proc} processes")
-        command = f'{run_script} "mpirun {mpirun_args}"'
+        command = f'{run_script} "mpirun {mpirun_args} -np {num_proc}" {sim_time}'
         lp_gen_command = f'python3 lp_gen.py -c \'{command}\' --icon --f77 -p {project_name} '\
             f' {v_arg} --netparam_file {NET_PARAMS_FILE}'
         print(f"[INFO] Command to execute: {lp_gen_command}")
@@ -310,13 +317,13 @@ def collect_metrics(data_dir: str, app: str,
     for app in apps:
         print(f"[INFO] Generate LP files for {app}")
         if app == "lulesh":
-            generate_lp_lulesh(data_dir, size_param, hostfile, verbose)
+            generate_lp_lulesh(data_dir, size_param, hostfile, num_threads, verbose)
         elif app == "hpcg":
-            generate_lp_hpcg(data_dir, size_param, hostfile, verbose)
+            generate_lp_hpcg(data_dir, size_param, hostfile, num_threads, verbose)
         elif app == "milc":
-            generate_lp_milc(data_dir, size_param, hostfile, verbose)
+            generate_lp_milc(data_dir, size_param, hostfile, num_threads, verbose)
         elif app == "icon":
-            generate_lp_icon(data_dir, size_param, hostfile, verbose)
+            generate_lp_icon(data_dir, size_param, hostfile, num_threads, verbose)
         else:
             print(f"[ERROR] Invalid application: {app}")
             exit(1)
@@ -328,16 +335,156 @@ def collect_metrics(data_dir: str, app: str,
 
 
 def run_lat_injection_lulesh(data_dir: str, L_params: Tuple,
-                             num_trials: int, verbose: bool = False) -> None:
+                             num_trials: int, hostfile: Optional[str],
+                             num_threads: int,
+                             verbose: bool = False) -> None:
     
     """
     Runs the latency injection experiments for LULESH
     """
+    if size_param == 'test':
+        num_procs = [8, 27]
+        data_size = 8
+        iterations = 500
+    else:
+        num_procs = [8, 27, 64]
+        data_size = 16
+        iterations = 1000
 
+    hostfile_arg = f"-f {hostfile}" if hostfile is not None else ""
+    lulesh_exec = "../apps/lulesh/build/lulesh2.0"
+    assert os.path.exists(lulesh_exec), "[ERROR] LULESH executable does not exist"
+    lulesh_command = f"{lulesh_exec} -s {data_size} -i {iterations}"
+
+    for num_proc in num_procs:
+        project_name = f"lulesh_{num_proc}"
+        out_dir = f"{data_dir}/lulesh/{project_name}/output"
+        res_file = f"{out_dir}/{project_name}_lat_injection.csv"
+        if os.path.exists(res_file):
+            print(f"[INFO] Latency injection results already exist for {project_name}. Skipping the experiments")
+            continue
+
+        exp_command = f'python3 run_lat_inject_exp.py -c "{lulesh_command}" -r {res_file} ' \
+                      f'--l-min {L_params[0]} --l-max {L_params[1]} --step {L_params[2]} ' \
+                      f'-t {num_trials} -a lulesh {hostfile_arg} -n {num_proc} -o {num_threads}'
+        
+        print(f"[INFO] Running latency injection experiments for {project_name}")
+        if os.system(exp_command) != 0:
+            print(f"[ERROR] Failed to run the command: {exp_command}")
+            exit(1)
+
+
+def run_lat_injection_hpcg(data_dir: str, L_params: Tuple,
+                            num_trials: int, hostfile: Optional[str],
+                            num_threads: int,
+                            verbose: bool = False) -> None:
+     """
+     Runs the latency injection experiments for HPCG
+     """
+     if size_param == 'test':
+          num_procs = [8, 16]
+          data_size = 16
+     else:
+          num_procs = [8, 32, 64]
+          data_size = 48
+    
+     hostfile_arg = f"-f {hostfile}" if hostfile is not None else ""
+     hpcg_exec = "../apps/hpcg/build/bin/xhpcg"
+     assert os.path.exists(hpcg_exec), "[ERROR] HPCG executable does not exist"
+     hpcg_command = f"{hpcg_exec} {data_size} {data_size} {data_size}"
+    
+     for num_proc in num_procs:
+          project_name = f"hpcg_{num_proc}"
+          out_dir = f"{data_dir}/hpcg/{project_name}/output"
+          res_file = f"{out_dir}/{project_name}_lat_injection.csv"
+          if os.path.exists(res_file):
+                print(f"[INFO] Latency injection results already exist for {project_name}. Skipping the experiments")
+                continue
+    
+          exp_command = f'python3 run_lat_inject_exp.py -c "{hpcg_command}" -r {res_file} ' \
+                         f'--l-min {L_params[0]} --l-max {L_params[1]} --step {L_params[2]} ' \
+                         f'-t {num_trials} -a hpcg {hostfile_arg} -n {num_proc} -o {num_threads}'
+          
+          print(f"[INFO] Running latency injection experiments for {project_name}")
+          if os.system(exp_command) != 0:
+                print(f"[ERROR] Failed to run the command: {exp_command}")
+                exit(1)
+
+
+def run_lat_injection_milc(data_dir: str, L_params: Tuple,
+                            num_trials: int, hostfile: Optional[str],
+                            num_threads: int,
+                            verbose: bool = False) -> None:
+    """
+    Runs the latency injection experiments for MILC
+    """
+    if size_param == 'test':
+        num_procs = [8, 16]
+    else:
+        num_procs = [8, 32, 64]
+    
+    hostfile_arg = f"-f {hostfile}" if hostfile is not None else ""
+    milc_exec = "../apps/milc_qcd/ks_imp_dyn/su3_rmd"
+    assert os.path.exists(milc_exec), "[ERROR] MILC executable does not exist"
+    conf_file = "../validation/milc/milc.in"
+    assert os.path.exists(conf_file), "[ERROR] MILC configuration file does not exist"
+
+    for num_proc in num_procs:
+        project_name = f"milc_{num_proc}"
+        out_dir = f"{data_dir}/milc/{project_name}/output"
+        res_file = f"{out_dir}/{project_name}_lat_injection.csv"
+        if os.path.exists(res_file):
+            print(f"[INFO] Latency injection results already exist for {project_name}. Skipping the experiments")
+            continue
+
+        exp_command = f'python3 run_lat_inject_exp.py -c "{milc_exec} {conf_file}" -r {res_file} ' \
+                      f'--l-min {L_params[0]} --l-max {L_params[1]} --step {L_params[2]} ' \
+                      f'-t {num_trials} -a milc {hostfile_arg} -n {num_proc} -o {num_threads} --timeout 120'
+        
+        print(f"[INFO] Running latency injection experiments for {project_name}")
+        if os.system(exp_command) != 0:
+            print(f"[ERROR] Failed to run the command: {exp_command}")
+            exit(1)
+
+
+def run_lat_injection_icon(data_dir: str, L_params: Tuple,
+                            num_trials: int, hostfile: Optional[str],
+                            num_threads: int, size_param: str = "test",
+                            verbose: bool = False) -> None:
+    """
+    Runs the latency injection experiments for ICON
+    """
+    if size_param == 'test':
+        num_procs = [8, 16]
+    else:
+        num_procs = [8, 32, 64]
+    
+    hostfile_arg = f"-f {hostfile}" if hostfile is not None else ""
+    run_script = "../validation/icon/run-icon.sh"
+    assert os.path.exists(run_script), "[ERROR] ICON run script does not exist"
+
+    for num_proc in num_procs:
+        project_name = f"icon_{num_proc}"
+        out_dir = f"{data_dir}/icon/{project_name}/output"
+        res_file = f"{out_dir}/{project_name}_lat_injection.csv"
+        if os.path.exists(res_file):
+            print(f"[INFO] Latency injection results already exist for {project_name}. Skipping the experiments")
+            continue
+
+        exp_command = f'python3 run_lat_inject_exp.py -c {run_script} -r {res_file} ' \
+                      f'--l-min {L_params[0]} --l-max {L_params[1]} --step {L_params[2]} ' \
+                      f'-t {num_trials} -a icon {hostfile_arg} -n {num_proc} --timeout 120 -o {num_threads}'
+        
+        print(f"[INFO] Running latency injection experiments for {project_name}")
+        if os.system(exp_command) != 0:
+            print(f"[ERROR] Failed to run the command: {exp_command}")
+            exit(1)
 
 
 def run_lat_injection(data_dir: str, app: str, L_params: Tuple,
-                      num_trials: int, verbose: bool = False) -> None:
+                      hostfile: Optional[str], num_trials: int,
+                      num_threads: int, size_param: str = "test",
+                      verbose: bool = False) -> None:
     """
     Runs the latency injection experiments
     """
@@ -348,7 +495,21 @@ def run_lat_injection(data_dir: str, app: str, L_params: Tuple,
 
     for app in apps:
         if app == "lulesh":
-            run_lat_injection_lulesh(data_dir, L_params, num_trials, verbose)
+            run_lat_injection_lulesh(data_dir, L_params, num_trials,
+                                     hostfile, num_threads, verbose)
+        elif app == "hpcg":
+            run_lat_injection_hpcg(data_dir, L_params, num_trials,
+                                   hostfile, num_threads, verbose)
+        elif app == "milc":
+            run_lat_injection_milc(data_dir, L_params, num_trials,
+                                   hostfile, num_threads, verbose)
+        elif app == "icon":
+            run_lat_injection_icon(data_dir, L_params, num_trials,
+                                   hostfile, num_threads,
+                                   size_param, verbose)
+        else:
+            print(f"[ERROR] Invalid application: {app}")
+            exit(1)
 
 
 if __name__ == "__main__":
@@ -399,10 +560,10 @@ if __name__ == "__main__":
         print(f"[ERROR] Invalid size parameter: {args.size_param}")
         exit(1)
     
-    if args.size_param == 'test':
-        L_params = (1, 100, 10)
+    if size_param == 'test':
+        L_params = (0, 100, 10)
     else:
-        L_params = (1, 100, 1)
+        L_params = (0, 100, 1)
     
     
     # Step 1: Collect network parameters
@@ -419,5 +580,8 @@ if __name__ == "__main__":
 
     # Step 3: Run the latency injection experiments
     run_lat_injection(args.data_dir, app=args.app,
-                      L_params=L_params,
-                      num_trials=args.num_trials, verbose=args.verbose)
+                      L_params=L_params, hostfile=args.hostfile,
+                      num_trials=args.num_trials,
+                      num_threads=args.num_threads,
+                      size_param=size_param,
+                      verbose=args.verbose)

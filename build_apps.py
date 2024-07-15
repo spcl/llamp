@@ -503,21 +503,21 @@ def build_icon(jobs: int = 1,
     icon_dir = icon_dir.replace("/", "\/")
     # Changes the directory to the validation directory
     os.chdir("../../validation/icon")
-    # Changes line 106 of the file run-icon.sh to the following:
+    # Changes line 123 of the file run-icon.sh to the following:
     # 'basedir=$icon_dir'
-    if os.system(f"sed -i '106s/.*/basedir={icon_dir}/' run-icon.sh") != 0:
+    if os.system(f"sed -i '123s/.*/basedir={icon_dir}/' run-icon.sh") != 0:
         print_error("Failed to replace line 106 in the file run-icon.sh")
         return False
     
-    # Changes line 110 of the file run-icon.sh to the following:
+    # Changes line 127 of the file run-icon.sh to the following:
     # 'experiments_dir=$basedir\/results'
-    if os.system(f"sed -i '110s/.*/experiments_dir=$basedir\/results/' run-icon.sh") != 0:
+    if os.system(f"sed -i '127s/.*/experiments_dir=$basedir\/results/' run-icon.sh") != 0:
         print_error("Failed to replace line 110 in the file run-icon.sh")
         return False
     
-    # Changes line 112 of the file run-icon.sh to the following:
-    # 'data_dir=$basedir\/data'
-    if os.system(f"sed -i '112s/.*/icon_data_rootFolder=$basedir\/data/' run-icon.sh") != 0:
+    # Changes line 129 of the file run-icon.sh to the following:
+    # 'icon_data_rootFolder=$basedir\/data'
+    if os.system(f"sed -i '129s/.*/icon_data_rootFolder=$basedir\/data/' run-icon.sh") != 0:
         print_error("Failed to replace line 112 in the file run-icon.sh")
         return False
 
