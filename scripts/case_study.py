@@ -175,7 +175,7 @@ def allerduce_generate_metrics(data_dir: str, size_param: str = "test",
 
                 for lat_buf_thresh in [0.01, 0.02, 0.05]:
                     command = f"python3 {main_script} --load-lp-model-path {lp_file} -a buffer {v_arg} "\
-                        f"--lat-buf-thresh {lat_buf_thresh} --lat-buf-baseline {lat_buf_baseline} "
+                        f"--lat-buf-thresh {lat_buf_thresh} --lat-buf-baseline {lat_buf_baseline}"
                     if verbose:
                         print(f"[INFO] Command to execute: {command}", flush=True)
                     
@@ -228,20 +228,102 @@ def topology_generate_metrics(data_dir: str, size_param: str = "test",
     Generates the metrics for ICON using different topologies, namely
     Fat Tree and Dragonfly.
     """
+    num_procs = 16 if size_param == "test" else 256
+
+    v_arg = "-v" if verbose else ""
     topology_dir = f"{data_dir}/topology"
     if not os.path.exists(topology_dir):
         print(f"[INFO] Creating directory: {topology_dir}")
         os.makedirs(topology_dir)
     
-    topologies = ["fattree", "dragonfly"]
+    name = f"icon_{num_procs}"
+    graph_file = f"{data_dir}/allreduce/recdoub/{name}/{name}.pkl"
+    assert os.path.exists(graph_file), f"[ERROR] Graph file does not exist: {graph_file}"
+
+
+    topologies = ["fat_tree", "dragonfly"]
     for topology in topologies:
         out_dir = f"{topology_dir}/{topology}"
         if not os.path.exists(out_dir):
             print(f"[INFO] Creating directory: {out_dir}")
             os.makedirs(out_dir)
         
+        if verbose:
+            print(f"[INFO] Generating metrics for ICON using {topology} topology")
+        
+    
+        # Checks if all result files exist
+        all_res_files_exist = \
+            all([os.path.exists(f"{out_dir}/{name}{res_file}") for res_file in RES_FILE_NAMES])
+        
+        if all_res_files_exist:
+            print(f"[INFO] Skipping generating metrics for ICON using {topology} topology", flush=True)
+            continue
 
+        # Checks if the lp file exists
+        lp_file = f"{out_dir}/{name}.lp"
+        if os.path.exists(lp_file):
+            lp_arg = f"--load-lp-model-path {lp_file}"
+        else:
+            lp_arg = f"--export-lp-model-path {lp_file}"
+        
+        L_min = 274
+        L_max = 424
+        L_step = 1
 
+        main_script = "../mpi-dep-graph/main.py"
+        assert os.path.exists(main_script), "[ERROR] Main script does not exist"
+        command = f"python3 {main_script} {lp_arg} --load-graph-path {graph_file} "\
+            f"-a sensitivity --output-dir {out_dir} --topology {topology} "\
+            f"--l-min {L_min} --l-max {L_max} --step {L_step} {v_arg}"
+
+        if verbose:
+            print(f"[INFO] Command to execute: {command}", flush=True)
+        
+        if os.system(command) != 0:
+            print(f"[ERROR] Failed to generate metrics for ICON using {topology} topology")
+            exit(1)
+        
+        assert all([os.path.exists(f"{out_dir}/{name}{res_file}") for res_file in RES_FILE_NAMES[:-1]]), \
+            f"[ERROR] Failed to generate metrics for ICON using {topology} topology"
+        
+        runtime_file = f"{out_dir}/{name}_runtime.csv"
+        assert os.path.exists(runtime_file), f"[ERROR] Runtime file does not exist: {runtime_file}"
+        lat_buf_baseline = int(get_baseline_runtime(runtime_file))
+
+        lat_tolerance_path = f"{out_dir}/{name}_lat_tolerance.csv"
+        lat_tolerance_file = open(lat_tolerance_path, "w")
+        lat_tolerance_file.write("latency_threshold,latency_tolerance\n")
+        lat_tolerance_file.flush()
+
+        for lat_buf_thresh in [0.01]:
+            command = f"python3 {main_script} --load-lp-model-path {lp_file} -a buffer {v_arg} "\
+                f"--lat-buf-thresh {lat_buf_thresh} --lat-buf-baseline {lat_buf_baseline}"
+            if verbose:
+                print(f"[INFO] Command to execute: {command}", flush=True)
+            
+            proc = run(command, shell=True, stdout=PIPE, stderr=PIPE)
+            if proc.returncode != 0:
+                print(f"[ERROR] Failed to generate metrics for ICON using {topology} topology")
+                print(proc.stderr.decode("utf-8"))
+                exit(1)
+
+            # Parses the output
+            output = proc.stdout.decode("utf-8")
+            if verbose:
+                print(output)
+            pattern = r"degradation: (\d+\.\d+) ns"
+            match = re.search(pattern, output)
+            if match is None:
+                print(f"[ERROR] Invalid output: {output}")
+                exit(1)
+            
+            latency_tolerance = float(match.group(1))
+            lat_tolerance_file.write(f"{lat_buf_thresh},{latency_tolerance}\n")
+            lat_tolerance_file.flush()
+            print(f"[INFO] Latency tolerance for {lat_buf_thresh}: {latency_tolerance} ns")
+
+        print(f"[INFO] Latency tolerance results written to {lat_tolerance_path}")
 
     
 if __name__ == "__main__":
