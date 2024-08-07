@@ -7,6 +7,7 @@ import seaborn as sns
 import numpy as np
 from typing import Tuple, List, Dict, Optional
 from utils import *
+import matplotlib.ticker as ticker
 warnings.filterwarnings('ignore')
 
 """
@@ -392,7 +393,7 @@ def plot_case_study_results(data_dir: str) -> None:
 
     HEIGHT = 2.5
     WIDTH = 6
-
+    font_size = 16
     L_0, _, _ = get_net_params(1024, NET_PARAMS_FILE)
     assert os.path.exists(data_dir), f"[ERROR] Data directory does not exist: {data_dir}"
     # Counts the number of subdirectories in the case study allreduce/recdoub directory
@@ -402,13 +403,469 @@ def plot_case_study_results(data_dir: str) -> None:
     ring_dir = f"{allreduce_dir}/ring"
     assert os.path.exists(allreduce_dir), f"[ERROR] Allreduce directory does not exist: {allreduce_dir}"
 
-    confs = [
+    recdoub_confs = [
         int(name.upper().split('_')[1]) for name in os.listdir(recdoub_dir) \
             if os.path.isdir(os.path.join(recdoub_dir, name))
     ]
+
+    ring_confs = [
+        int(name.upper().split('_')[1]) for name in os.listdir(ring_dir) \
+            if os.path.isdir(os.path.join(ring_dir, name))
+    ]
+
+    assert len(recdoub_confs) == len(ring_confs), \
+        "[ERROR] Number of node configurations are not the same for recdoub and ring allreduce"
+    
+    M = len(recdoub_confs)
+    fig, axs = plt.subplots(2, M, figsize=(WIDTH * M, HEIGHT), sharex="col")
+    
+    palette = sns.color_palette()
+
+    sns.set_theme()
+    sns.set_style("whitegrid")
+
+    opacity = 0.1
+    x_padding = 5
+    y_padding = 0.02
+    buffer_font = 11
+    print("[INFO] Plotting case study results")
+    print("[INFO] Plotting recursive doubling and ring allreduce results")
+    # Recursive doubling
+    for i in range(len(recdoub_confs)):
+        name = f"icon_{recdoub_confs[i]}"
+        ax_rd = axs[0][i]
+
+        # Set gridlines
+        ax_rd.grid(True, zorder=0)
+
+        with sns.axes_style("whitegrid"):
+            runtime_file = f"{recdoub_dir}/{name}/{name}_runtime.csv"
+            assert os.path.exists(runtime_file), f"[ERROR] Runtime file does not exist: {runtime_file}"
+            runtime_rd_df = pd.read_csv(runtime_file)
+
+            runtime_rd_df["runtime"] = runtime_rd_df["runtime"] / 1e9
+            runtime_rd_df["L"] = (runtime_rd_df["L"] - L_0) / 1000
+
+            sns.lineplot(data=runtime_rd_df, x="L", y="runtime",
+                         ax=ax_rd, label="Recursive Doubling", marker='o', color=palette[0])
+            
+            ax_rd.set_title(f"ICON {recdoub_confs[i]}", fontsize=font_size)
+            if i == 0:
+                ax_rd.set_ylabel("Runtime [s]", fontsize=font_size)
+            else:
+                ax_rd.set_ylabel("")
+            
+            ax_rd.set_xlabel("")
+
+            ax_rd.set_xticks([])
+
+            x_lim = (0 - x_padding, runtime_rd_df["L"].max() + x_padding)
+
+            ax_rd.set_xlim(x_lim)
+
+            y_lim = (runtime_rd_df["runtime"].min() * (1 - y_padding),
+                     runtime_rd_df["runtime"].max() * (1 + y_padding))
+            ax_rd.set_ylim(y_lim)
+
+            # Plots the latency buffer
+
+            lat_tolerance_file = f"{recdoub_dir}/{name}/{name}_lat_tolerance.csv"
+            assert os.path.exists(lat_tolerance_file), f"[ERROR] Latency buffer file does not exist: {lat_tolerance_file}"
+
+            df_buffer = pd.read_csv(lat_tolerance_file)
+            buffer1 = df_buffer[df_buffer["latency_threshold"] == 0.01]["latency_tolerance"].values[0] / 1000
+            buffer2 = df_buffer[df_buffer["latency_threshold"] == 0.02]["latency_tolerance"].values[0] / 1000
+            buffer3 = df_buffer[df_buffer["latency_threshold"] == 0.05]["latency_tolerance"].values[0] / 1000
+
+            shade_y_lim = (-1000, 1000)
+            ax_rd.axvline(x=buffer3, color='red', linestyle='--', zorder=100)
+            ax_rd.fill_betweenx(shade_y_lim, -100, buffer3, color='red', alpha=opacity)
+
+            ax_rd.axvline(x=buffer2, color='orange', linestyle='--', zorder=100)
+            ax_rd.fill_betweenx(shade_y_lim, -100, buffer2, color='orange', alpha=opacity)
+
+            ax_rd.axvline(x=buffer1, color='green', linestyle='--', zorder=100)
+            ax_rd.fill_betweenx(shade_y_lim, -100, buffer1, color='green', alpha=opacity)
+
+            if i == 0:
+                legend = ax_rd.legend(loc="lower right", borderaxespad=0, fontsize=font_size)
+                legend.set_zorder(102)
+            else:
+                ax_rd.legend().set_visible(False)
+            
+            # Labels the network latency buffer
+
+            text_y_pos = 0.9 * y_lim[1] + 0.1 * y_lim[0]
+            x_pos = (buffer3 + buffer2) / 2
+            ax_rd.text(x_pos, text_y_pos, f"{buffer3:.1f}",
+                       fontsize=buffer_font, color="red", ha="center", va="top")
+            
+            x_pos = (buffer2 + buffer1) / 2
+            ax_rd.text(x_pos, text_y_pos, f"{buffer2:.1f}",
+                       fontsize=buffer_font, color="orange", ha="center", va="top")
+            
+            x_pos = (buffer1 + x_lim[0]) / 2
+            ax_rd.text(x_pos, text_y_pos, f"{buffer1:.1f}",
+                       fontsize=buffer_font, color="green", ha="center", va="top")
+            
+            # Inset axis
+            ax_inset = ax_rd.inset_axes([0, -1, 1, 0.9], transform=ax_rd.transAxes)
+            ax_inset.set_xticks([])
+            ax_inset.set_xlim(x_lim)
+
+            if i == 0:
+                ax_inset.set_xlabel(r'$\lambda_L$', fontsize=font_size)
+
+            # Reads the sensitivity data
+            sen_file = f"{recdoub_dir}/{name}/{name}_lat_sensitivity.csv"
+            assert os.path.exists(sen_file), f"[ERROR] Sensitivity file does not exist: {sen_file}"
+            sen_rd_df = pd.read_csv(sen_file)
+            ax_inset.yaxis.set_major_formatter(ticker.EngFormatter())
+            ax_inset.step(sen_rd_df["L"], sen_rd_df["sensitivity"], where='post',
+                          label="Sensitivity", marker=".", color=palette[0])
+            
+            # Draws vertical lines indicating the latency buffer
+            ax_inset.axvline(x=buffer1, color="green", linestyle="--", zorder=100)
+            ax_inset.axvline(x=buffer2, color="orange", linestyle="--", zorder=100)
+            ax_inset.axvline(x=buffer3, color="red", linestyle="--", zorder=100)
+            if i == 0:
+                legend = ax_inset.legend(loc="upper left", borderaxespad=0, fontsize=font_size)
+                legend.set_zorder(102)
+            else:
+                ax_inset.legend().set_visible(False)
+
+            ax_lat_cost = ax_inset.twinx()
+
+            lat_ratio_file = f"{recdoub_dir}/{name}/{name}_lat_ratio.csv"
+            assert os.path.exists(lat_ratio_file), f"[ERROR] Latency ratio file does not exist: {lat_ratio_file}"
+
+            lat_ratio_df = pd.read_csv(lat_ratio_file)
+            lat_ratio_df["L"] = (lat_ratio_df["L"] - L_0) / 1000
+            
+            # Multiply by 100 to convert to percentage
+            lat_ratio_df["crit_lat"] *= 100
+            ax_lat_cost.plot(lat_ratio_df["L"], lat_ratio_df["crit_lat"],
+                             color="r", label="L ratio", marker=".")
+            ax_lat_cost.yaxis.set_major_formatter(ticker.PercentFormatter(decimals=0))
+
+            if i == len(recdoub_confs) - 1:
+                ax_lat_cost.set_ylabel(r'$\rho_L$', fontsize=font_size)
+
+            if i == 0:
+                legend = ax_lat_cost.legend(loc="lower right", borderaxespad=0, fontsize=font_size)
+                legend.set_zorder(102)
+            else:
+                ax_lat_cost.legend().set_visible(False)
+            
+            ax_lat_cost.grid(False)
+            ax_lat_cost.tick_params(axis='y', labelsize=14, rotation=30)
         
 
+        # Ring
+        with sns.axes_style("whitegrid"):
+            name = f"icon_{ring_confs[i]}"
+            ax_ring = axs[1][i]
 
+            ax_ring.grid(True, zorder=0)
+
+            runtime_file = f"{ring_dir}/{name}/{name}_runtime.csv"
+            assert os.path.exists(runtime_file), f"[ERROR] Runtime file does not exist: {runtime_file}"
+            runtime_ring_df = pd.read_csv(runtime_file)
+
+            runtime_ring_df["runtime"] = runtime_ring_df["runtime"] / 1e9
+            runtime_ring_df["L"] = (runtime_ring_df["L"] - L_0) / 1000
+
+            sns.lineplot(data=runtime_ring_df, x="L", y="runtime",
+                         ax=ax_ring, label="Ring", marker='X', color=palette[1])
+            
+            # ax_ring.set_title(f"Ring {ring_confs[i]}", fontsize=font_size)
+            if i == 0:
+                ax_ring.set_ylabel("Runtime [s]", fontsize=font_size)
+            else:
+                ax_ring.set_ylabel("")
+            
+            ax_ring.set_xlabel("")
+
+            ax_ring.set_xticks([])
+
+            x_lim = (0 - x_padding, runtime_ring_df["L"].max() + x_padding)
+
+            ax_ring.set_xlim(x_lim)
+
+            y_lim = (runtime_ring_df["runtime"].min() * (1 - y_padding),
+                     runtime_ring_df["runtime"].max() * (1 + y_padding))
+            ax_ring.set_ylim(y_lim)
+
+            # Plots the latency buffer
+
+            lat_tolerance_file = f"{ring_dir}/{name}/{name}_lat_tolerance.csv"
+            assert os.path.exists(lat_tolerance_file), f"[ERROR] Latency buffer file does not exist: {lat_tolerance_file}"
+
+            df_buffer = pd.read_csv(lat_tolerance_file)
+            buffer1 = df_buffer[df_buffer["latency_threshold"] == 0.01]["latency_tolerance"].values[0] / 1000
+            buffer2 = df_buffer[df_buffer["latency_threshold"] == 0.02]["latency_tolerance"].values[0] / 1000
+            buffer3 = df_buffer[df_buffer["latency_threshold"] == 0.05]["latency_tolerance"].values[0] / 1000
+
+            shade_y_lim = (-1000, 1000)
+            ax_ring.axvline(x=buffer3, color='red', linestyle='--', zorder=100)
+            ax_ring.fill_betweenx(shade_y_lim, -100, buffer3, color='red', alpha=opacity)
+
+            ax_ring.axvline(x=buffer2, color='orange', linestyle='--', zorder=100)
+            ax_ring.fill_betweenx(shade_y_lim, -100, buffer2, color='orange', alpha=opacity)
+
+            ax_ring.axvline(x=buffer1, color='green', linestyle='--', zorder=100)
+            ax_ring.fill_betweenx(shade_y_lim, -100, buffer1, color='green', alpha=opacity)
+            ax_ring.set_xticks([])
+
+            if i == 0:
+                legend = ax_ring.legend(loc="lower right", borderaxespad=0, fontsize=font_size)
+                legend.set_zorder(102)
+            else:
+                ax_ring.legend().set_visible(False)
+            
+            # Labels the network latency buffer
+            y_lim = ax_ring.get_ylim()
+            text_y_pos = 0.9 * y_lim[1] + 0.1 * y_lim[0]
+            x_pos = (buffer3 + buffer2) / 2
+            ax_ring.text(x_pos, text_y_pos, f"{buffer3:.1f}",
+                         fontsize=buffer_font, color="red", ha="center", va="top")
+            
+            x_pos = (buffer2 + buffer1) / 2
+            ax_ring.text(x_pos, text_y_pos, f"{buffer2:.1f}",
+                         fontsize=buffer_font, color="orange", ha="center", va="top")
+            
+            x_pos = (buffer1 + x_lim[0]) / 2
+            ax_ring.text(x_pos, text_y_pos, f"{buffer1:.1f}",
+                         fontsize=buffer_font, color="green", ha="center", va="top")
+            
+            # Inset axis
+            ax_inset = ax_ring.inset_axes([0, -1, 1, 0.9], transform=ax_ring.transAxes)
+            ax_inset.set_xlabel("ΔL [μs]", fontsize=font_size)
+            if i == 0:
+                ax_inset.set_xlabel(r'$\lambda_L$', fontsize=font_size)
+            
+            # Sets the size of the y ticks
+            ax_inset.tick_params(axis='y', labelsize=font_size)
+            ax_inset.tick_params(axis='x', labelsize=font_size)
+
+            # Draws vertical lines indicating the latency buffer
+            ax_inset.axvline(x=buffer1, color="green", linestyle="--", zorder=100)
+            ax_inset.axvline(x=buffer2, color="orange", linestyle="--", zorder=100)
+            ax_inset.axvline(x=buffer3, color="red", linestyle="--", zorder=100)
+
+            # Reads the sensitivity data
+            sen_file = f"{ring_dir}/{name}/{name}_lat_sensitivity.csv"
+            assert os.path.exists(sen_file), f"[ERROR] Sensitivity file does not exist: {sen_file}"
+            sen_ring_df = pd.read_csv(sen_file)
+            ax_inset.step(sen_ring_df["L"], sen_ring_df["sensitivity"], where='post',
+                          label="Sensitivity", marker=".", color=palette[1])
+            ax_inset.yaxis.set_major_formatter(ticker.EngFormatter())
+
+            if i == 0:
+                legend = ax_inset.legend(loc="upper left", borderaxespad=0, fontsize=font_size)
+                legend.set_zorder(102)
+            else:
+                ax_inset.legend().set_visible(False)
+            
+            ax_lat_cost = ax_inset.twinx()
+            # Reads the critical latency data
+            lat_ratio_file = f"{ring_dir}/{name}/{name}_lat_ratio.csv"
+            assert os.path.exists(lat_ratio_file), f"[ERROR] Latency ratio file does not exist: {lat_ratio_file}"
+            lat_ratio_df = pd.read_csv(lat_ratio_file)
+            lat_ratio_df["L"] = (lat_ratio_df["L"] - L_0) / 1000
+            lat_ratio_df["crit_lat"] *= 100
+            ax_lat_cost.plot(lat_ratio_df["L"], lat_ratio_df["crit_lat"],
+                             color="r", label="L ratio", marker="x")
+            if i == len(ring_confs) - 1:
+                ax_lat_cost.set_ylabel(r'$\rho_L$', fontsize=font_size)
+            
+            # Removes gridlines
+            ax_lat_cost.grid(False)
+            ax_lat_cost.tick_params(axis='y', labelsize=14, rotation=30)
+
+            if i == 0:
+                legend = ax_lat_cost.legend(loc="lower right", borderaxespad=0, fontsize=font_size)
+                legend.set_zorder(102)
+            else:
+                ax_lat_cost.legend().set_visible(False)
+        
+    plt.rcParams.update({'font.size': font_size})
+    plt.tight_layout()
+    fig.savefig(f"{data_dir}/allreduce.png", bbox_inches='tight')
+    fig.savefig(f"{data_dir}/allreduce.pdf", bbox_inches='tight')
+
+    plt.close(fig)
+
+
+    # ===================================
+    # TOPOLOGY
+    # ===================================
+
+
+    print(f"[INFO] Plotting Fat Tree and Dragonfly results")
+
+    # Fat Tree
+    fat_tree_dir = f"{data_dir}/topology/fat_tree"
+    assert os.path.exists(fat_tree_dir), f"[ERROR] Fat Tree directory does not exist: {fat_tree_dir}"
+    dragonfly_dir = f"{data_dir}/topology/dragonfly"
+    assert os.path.exists(dragonfly_dir), f"[ERROR] Dragonfly directory does not exist: {dragonfly_dir}"
+
+    confs = [
+        int(name.upper().split('_')[1]) for name in os.listdir(data_dir) \
+            if os.path.isdir(os.path.join(data_dir, name)) and name.startswith("icon")
+    ]
+    print(confs)
+    conf = sorted(confs)[-1]
+
+    HEIGHT = 7
+    WIDTH = 10
+
+    font_size = 15
+    fig, axs = plt.subplots(1, 1, figsize=(WIDTH, HEIGHT))
+
+    sns.set_theme()
+    sns.set_style("whitegrid")
+
+    ft_runtime_file = f"{fat_tree_dir}/icon_{conf}_runtime.csv"
+    assert os.path.exists(ft_runtime_file), f"[ERROR] Runtime file does not exist: {ft_runtime_file}"
+    ft_runtime_df = pd.read_csv(ft_runtime_file)
+    ft_runtime_df["runtime"] = ft_runtime_df["runtime"] / 1e9
+
+    dragonfly_runtime_file = f"{dragonfly_dir}/icon_{conf}_runtime.csv"
+    assert os.path.exists(dragonfly_runtime_file), f"[ERROR] Runtime file does not exist: {dragonfly_runtime_file}"
+    dragonfly_runtime_df = pd.read_csv(dragonfly_runtime_file)
+    dragonfly_runtime_df["runtime"] = dragonfly_runtime_df["runtime"] / 1e9
+
+    palette = sns.color_palette()
+    sns.lineplot(data=ft_runtime_df, x="L", y="runtime", ax=axs,
+                 label="Fat Tree", marker='o', color=palette[0], markersize=7)
+    sns.lineplot(data=dragonfly_runtime_df, x="L", y="runtime", ax=axs,
+                label="Dragonfly", marker='X', color=palette[1], markersize=7)
+    
+    # Sets the title
+    axs.set_title(f"ICON {conf}", fontsize=font_size)
+
+    # Reads the latecy tolerance file
+    ft_lat_tolerance_file = f"{fat_tree_dir}/icon_{conf}_lat_tolerance.csv"
+    assert os.path.exists(ft_lat_tolerance_file), f"[ERROR] Latency buffer file does not exist: {ft_lat_tolerance_file}"
+    df_buffer = pd.read_csv(ft_lat_tolerance_file)
+    ft_buffer = df_buffer[df_buffer["latency_threshold"] == 0.01]["latency_tolerance"].values[0] / 1000
+
+    # Calculates the average y value for the fat tree runtime
+    y_lim = (ft_runtime_df["runtime"].min(), ft_runtime_df["runtime"].max())
+    text_y_pos = (y_lim[0] + y_lim[1]) / 2 - 0.1 * (y_lim[1] - y_lim[0])
+    x_lim = axs.get_xlim()
+    text_x_pos = (x_lim[0] + x_lim[1]) / 2
+
+    axs.text(text_x_pos, text_y_pos,
+             f"Fat Tree 1% L tolerance {ft_buffer:.1f} ns",
+            fontsize=font_size - 1, color=palette[0],
+            ha="center", va="top", fontweight="bold")
+
+    dragonfly_lat_tolerance_file = f"{dragonfly_dir}/icon_{conf}_lat_tolerance.csv"
+    assert os.path.exists(dragonfly_lat_tolerance_file), f"[ERROR] Latency buffer file does not exist: {dragonfly_lat_tolerance_file}"
+    df_buffer = pd.read_csv(dragonfly_lat_tolerance_file)
+    dragonfly_buffer = df_buffer[df_buffer["latency_threshold"] == 0.01]["latency_tolerance"].values[0] / 1000
+
+    y_lim = (dragonfly_runtime_df["runtime"].min(), dragonfly_runtime_df["runtime"].max())
+    text_y_pos = (y_lim[0] + y_lim[1]) / 2 - 0.1 * (y_lim[1] - y_lim[0])
+    axs.text(text_x_pos, text_y_pos,
+             f"Dragonfly 1% L tolerance {dragonfly_buffer:.1f} ns",
+             fontsize=font_size - 1, color=palette[1],
+             ha="center", va="top", fontweight="bold")
+    
+    axs.set_ylabel("Runtime [s]", fontsize=font_size)
+    axs.set_xlabel("")
+    
+    x_lim = axs.get_xlim()
+    inset_width = (x_lim[1] - x_lim[0]) / 2 - 0.1 * (x_lim[1] - x_lim[0])
+
+    y_lim = axs.get_ylim()
+    ax_height = y_lim[1] - y_lim[0]
+    inset_height = ax_height * 0.6
+    padding = 0.1 * ax_height
+    inset_y_offset = y_lim[0] - inset_height - padding
+
+    ax_inset_ft = axs.inset_axes([x_lim[0], inset_y_offset, inset_width, inset_height],
+                                 transform=axs.transData)
+    ax_inset_ft.grid(True, zorder=0)
+    ax_inset_ft.set_ylabel(r'$\lambda_L$', fontsize=font_size)
+    ax_inset_ft.set_xlabel("L [ns]", fontsize=font_size)
+
+    x_offset = x_lim[0] + inset_width + 0.1 * (x_lim[1] - x_lim[0])
+    ax_inset_df = axs.inset_axes([x_offset, inset_y_offset, inset_width, inset_height],
+                                 transform=axs.transData)
+    
+    ax_inset_df.grid(True, zorder=0)
+    ax_inset_df.set_xlabel("L [ns]", fontsize=font_size)
+
+
+    ft_sen_file = f"{fat_tree_dir}/icon_{conf}_lat_sensitivity.csv"
+    assert os.path.exists(ft_sen_file), f"[ERROR] Sensitivity file does not exist: {ft_sen_file}"
+    ft_sen_df = pd.read_csv(ft_sen_file)
+    ax_inset_ft.step(ft_sen_df["L"], ft_sen_df["sensitivity"], where='post',
+                     label="Fat Tree", marker="o", color=palette[0], markersize=4)
+    
+    dragonfly_sen_file = f"{dragonfly_dir}/icon_{conf}_lat_sensitivity.csv"
+    assert os.path.exists(dragonfly_sen_file), f"[ERROR] Sensitivity file does not exist: {dragonfly_sen_file}"
+    dragonfly_sen_df = pd.read_csv(dragonfly_sen_file)
+    ax_inset_df.step(dragonfly_sen_df["L"], dragonfly_sen_df["sensitivity"], where='post',
+                     label="Dragonfly", marker="X", color=palette[1], markersize=4)
+    ax_inset_ft.yaxis.set_major_formatter(ticker.EngFormatter())
+    ax_inset_df.yaxis.set_major_formatter(ticker.EngFormatter())
+
+    # Reads the critical latency data
+    ft_lat_ratio_file = f"{fat_tree_dir}/icon_{conf}_lat_ratio.csv"
+    assert os.path.exists(ft_lat_ratio_file), f"[ERROR] Latency ratio file does not exist: {ft_lat_ratio_file}"
+    ft_lat_ratio_df = pd.read_csv(ft_lat_ratio_file)
+    ft_lat_ratio_df["crit_lat"] *= 100
+
+    dragonfly_lat_ratio_file = f"{dragonfly_dir}/icon_{conf}_lat_ratio.csv"
+    assert os.path.exists(dragonfly_lat_ratio_file), f"[ERROR] Latency ratio file does not exist: {dragonfly_lat_ratio_file}"
+
+    dragonfly_lat_ratio_df = pd.read_csv(dragonfly_lat_ratio_file)
+    dragonfly_lat_ratio_df["crit_lat"] *= 100
+
+    # Gets the lowest and highest crit_lat value from the two dataframes
+    ft_x_min = ft_lat_ratio_df["L"].min()
+    ft_y_min = ft_lat_ratio_df["crit_lat"].min()
+    ft_x_max = ft_lat_ratio_df["L"].max()
+    ft_y_max = ft_lat_ratio_df["crit_lat"].max()
+
+
+    dragonfly_x_min = dragonfly_lat_ratio_df["L"].min()
+    dragonfly_y_min = dragonfly_lat_ratio_df["crit_lat"].min()
+    dragonfly_x_max = dragonfly_lat_ratio_df["L"].max()
+    dragonfly_y_max = dragonfly_lat_ratio_df["crit_lat"].max()
+
+    ax_inset_ft.annotate(rf'$\rho_L$ = {ft_y_min:.2f}%',
+                         xy=(ft_x_min, ft_y_min),
+                         xytext=(ft_x_min, ft_y_min + 0.5),
+                         arrowprops=dict(facecolor='black', arrowstyle='->'),
+                         fontsize=font_size - 1)
+    ax_inset_ft.annotate(rf"$\rho_L$ = {ft_y_max:.2f}%",
+                         xy=(ft_x_max, ft_y_max),
+                         xytext=(ft_x_max, ft_y_max + 0.5),
+                         arrowprops=dict(facecolor='black', arrowstyle='->'),
+                         fontsize=font_size - 1)
+    
+    ax_inset_df.annotate(rf'$\rho_L$ = {dragonfly_y_min:.2f}%',
+                         xy=(dragonfly_x_min, dragonfly_y_min),
+                         xytext=(dragonfly_x_min, dragonfly_y_min + 0.5),
+                         arrowprops=dict(facecolor='black', arrowstyle='->'),
+                         fontsize=font_size - 1)
+
+    ax_inset_df.annotate(rf"$\rho_L$ = {dragonfly_y_max:.2f}%",
+                         xy=(dragonfly_x_max, dragonfly_y_max),
+                         xytext=(dragonfly_x_max, dragonfly_y_max + 0.5),
+                         arrowprops=dict(facecolor='black', arrowstyle='->'),
+                         fontsize=font_size - 1)
+    
+    plt.tight_layout()
+    fig.savefig(f"{data_dir}/topology.png", bbox_inches='tight')
+    fig.savefig(f"{data_dir}/topology.pdf", bbox_inches='tight')
+
+    
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Plotting script')
