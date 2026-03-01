@@ -107,6 +107,28 @@ if __name__ == "__main__":
     parser.add_argument("-G", dest="G_val", required=False, default=0.018, type=float,
                         help="If given, will set the value of G in the LogGPS model "
                         "to be a constant when constructing the LP. [DEFAULT: 0.018]")
+    parser.add_argument("--trace-compress", dest="trace_compress",
+                        choices=["off", "lossless", "iter-template"],
+                        default="off",
+                        help="Trace compression mode applied before graph construction. "
+                        "Options: off, lossless, iter-template. [DEFAULT: off]")
+    parser.add_argument("--trace-compress-materialize",
+                        dest="trace_compress_materialize",
+                        action="store_true", default=False,
+                        help="If set with trace compression, prints a small materialized "
+                        "event slice for debugging.")
+    parser.add_argument("--trace-compress-rank-parametric",
+                        dest="trace_compress_rank_parametric",
+                        action="store_true", default=False,
+                        help="If set, reports rank-program deduplication using "
+                        "rank-relative endpoint normalization.")
+    parser.add_argument("--collective-semantics",
+                        dest="collective_semantics",
+                        choices=["marker", "ring"],
+                        default="marker",
+                        help="How to model collective markers in traces. "
+                        "'marker' keeps zero-cost local markers, "
+                        "'ring' adds explicit ring send/recv coupling.")
     
 
     args = parser.parse_args()
@@ -164,7 +186,13 @@ if __name__ == "__main__":
             # cProfile.run("dep_graph = dep_graph_generator.generate()")
             is_loggps = args.S is not None
             start = time()
-            dep_graph = dep_graph_generator.generate(is_loggps)
+            dep_graph = dep_graph_generator.generate(
+                is_loggps,
+                trace_compress=args.trace_compress,
+                trace_compress_materialize=args.trace_compress_materialize,
+                collective_semantics=args.collective_semantics,
+                trace_compress_rank_parametric=args.trace_compress_rank_parametric,
+            )
             print("[INFO] Generated dependency graph in {:.2f} seconds.".format(time() - start))
 
         print(f"[INFO] Graph statistics:")
@@ -227,8 +255,9 @@ if __name__ == "__main__":
             # Writes a MPS file as well
             model.write(args.export_lp_model_path.replace(".lp", ".mps"))
         else:
-            # model.ExportModelAsMpsFormat(False, args.export_lp_model_path, False)
-            model.ExportModelAsLpFormat(False, args.export_lp_model_path, False)
+            lp_string = model.ExportModelAsLpFormat(False)
+            with open(args.export_lp_model_path, "w") as f:
+                f.write(lp_string)
         print(f"[INFO] Exported LP model to {args.export_lp_model_path}.", flush=True)
     
     # Initializes the analyzer

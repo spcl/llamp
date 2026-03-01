@@ -1,5 +1,5 @@
 import re
-from typing import List
+from typing import Optional, Dict, Tuple, Union
 from goal_elem import *
     
 
@@ -40,6 +40,50 @@ class GoalFileParser(object):
         """
         Initialize the goal file parser.
         """
+        pass
+
+    @staticmethod
+    def __parse_meta_value(raw: str) -> Union[int, str]:
+        """
+        Parse a metadata value into int when possible.
+        """
+        try:
+            return int(raw)
+        except ValueError:
+            return raw
+
+    def __parse_metadata(self, trailing_tokens: str) -> Dict[str, Union[int, str]]:
+        """
+        Parses optional key-value metadata that can trail an op line, e.g.
+        `cpu 3 nic 0 stream 1` or `stream=1`.
+        """
+        trailing_tokens = trailing_tokens.strip()
+        if len(trailing_tokens) == 0:
+            return {}
+
+        metadata: Dict[str, Union[int, str]] = {}
+        tokens = trailing_tokens.split()
+        i = 0
+        while i < len(tokens):
+            token = tokens[i]
+            if "=" in token:
+                key, value = token.split("=", 1)
+                if key:
+                    metadata[key] = self.__parse_meta_value(value)
+                i += 1
+                continue
+
+            if i + 1 < len(tokens):
+                key = token
+                value = tokens[i + 1]
+                # Skip malformed pair like "key value=1", the next loop
+                # iteration will handle the key=value token.
+                if "=" not in value:
+                    metadata[key] = self.__parse_meta_value(value)
+                    i += 2
+                    continue
+
+            i += 1
 
     def parse_line(self, line: str) -> Optional[GoalElement]:
         """
@@ -69,19 +113,34 @@ class GoalFileParser(object):
         if match:
             return RankEnd()
         # Matches the send operation
-        match = re.match(r"^l(\d+)\s*:\s*send\s+(\d+)b\s+to\s+(\d+)(?:\s+tag\s+(\d+))?$", line)
+        match = re.match(r"^l(\d+)\s*:\s*send\s+(\d+)b\s+to\s+(\d+)(?:\s+tag\s+(\d+))?(.*)$", line)
         if match:
+            tag = int(match.group(4)) if match.group(4) is not None else None
+            metadata = self.__parse_metadata(match.group(5))
             return SendOp(int(match.group(1)), int(match.group(2)),
-                          int(match.group(3)), int(match.group(4)))
+                          int(match.group(3)), tag, metadata)
         # Matches the recv operation
-        match = re.match(r"^l(\d+)\s*:\s*recv\s+(\d+)b\s+from\s+(\d+)(?:\s+tag\s+(\d+))?$", line)
+        match = re.match(r"^l(\d+)\s*:\s*recv\s+(\d+)b\s+from\s+(\d+)(?:\s+tag\s+(\d+))?(.*)$", line)
         if match:
+            tag = int(match.group(4)) if match.group(4) is not None else None
+            metadata = self.__parse_metadata(match.group(5))
             return RecvOp(int(match.group(1)), int(match.group(2)),
-                          int(match.group(3)), int(match.group(4)))
+                          int(match.group(3)), tag, metadata)
         # Matches the calc operation
-        match = re.match(r"^l(\d+)\s*:\s*calc\s+(\d+)$", line)
+        match = re.match(r"^l(\d+)\s*:\s*calc\s+(\d+)(.*)$", line)
         if match:
-            return CalcOp(int(match.group(1)), int(match.group(2)))
+            metadata = self.__parse_metadata(match.group(3))
+            return CalcOp(int(match.group(1)), int(match.group(2)), metadata)
+        # Matches collective marker/event operation
+        match = re.match(r"^l(\d+)\s*:\s*([A-Za-z_][A-Za-z0-9_]*)\s+(\d+)\s+bytes(.*)$", line)
+        if match:
+            metadata = self.__parse_metadata(match.group(4))
+            return CollectiveOp(
+                int(match.group(1)),
+                match.group(2),
+                int(match.group(3)),
+                metadata,
+            )
         # Matches the dependency
         match = re.match(r"^l(\d+)\s+(irequires|requires)\s+l(\d+)$", line)
         if match:

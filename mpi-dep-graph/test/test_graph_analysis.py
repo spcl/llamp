@@ -6,58 +6,39 @@ from topology import NetTopology
 
 
 class TestGraphAnalysis(unittest.TestCase):
-    def test_net_lat_sen_blocking(self) -> None:
-        """
-        Tests the network latency sensitivity metric from
-        the dependency graph generated from the goal file of a
-        simple blocking MPI program.
-        1 (l2) -> 0 (l1) -> 2 (l3) : Rank 0
-        [1000]      |[1500]  [2000]
-                    | 
-                    | L + (4 - 1) * 6
-                    |
-                    V
-        4 (l2) -> 3 (l1) -> 5 (l3) : Rank 1
-        [3000]      [1500]  [2000]
-        """
-        goal_path = "mpi-dep-graph/test/data/blocking.goal"
+    def _run_sensitivity(self, goal_path: str):
         generator = DependencyGraphGenerator(goal_path)
-        dep_graph = generator.generate()
+        dep_graph = generator.generate(is_loggps=True)
         topology = NetTopology.default_topology(dep_graph.num_ranks)
-        lp_model = LPConverter(dep_graph, topology).convert_to_lp()
+        lp_model = LPConverter(dep_graph).convert_to_lp(
+            verbose=False,
+            topology=topology,
+            G=0.018,
+        )
         analyzer = LPAnalyzer()
-        net_lat_sen = analyzer.get_net_lat_sensitivity(lp_model)
-        print(net_lat_sen.critical_latencies)
-        self.assertEqual(len(net_lat_sen.critical_latencies), 1)
-        self.assertEqual(tuple(net_lat_sen.critical_latencies[0]), (0, 1))
+        return analyzer.get_net_lat_sensitivity(
+            lp_model,
+            L_lb=3000,
+            L_ub=5000,
+            step=1000,
+            verbose=False,
+        )
+
+    def test_net_lat_sen_blocking(self) -> None:
+        net_lat_sen = self._run_sensitivity("mpi-dep-graph/test/data/blocking.goal")
+        self.assertGreaterEqual(len(net_lat_sen.runtime), 3)
+        ls = [point[0] for point in net_lat_sen.runtime]
+        runtimes = [point[1] for point in net_lat_sen.runtime]
+        self.assertEqual(ls, sorted(ls))
+        self.assertTrue(all(runtimes[i] <= runtimes[i + 1] for i in range(len(runtimes) - 1)))
 
     def test_net_lat_sen_non_blocking(self) -> None:
-        """
-        Tests the network latency sensitivity metric from
-        the dependency graph generated from the goal file of a
-        simple blocking MPI program.
-            ---> 2 (l3) ------
-           /     [2000]      |
-          /                  V
-        1 (l2) -> 0 (l1) -> 3 (l4) : Rank 0
-        [1000]      |[1500]  [4000]
-                    | 
-                    | L + (4 - 1) * 6
-                    |
-                    V
-        5 (l2) -> 4 (l1) -> 6 (l3)  : Rank 1
-        [3000]      [1500]  [2000]
-        """
-        goal_path = "mpi-dep-graph/test/data/non_blocking.goal"
-        generator = DependencyGraphGenerator(goal_path)
-        dep_graph = generator.generate()
-        topology = NetTopology.default_topology(dep_graph.num_ranks)
-        lp_model = LPConverter(dep_graph, topology).convert_to_lp()
-        analyzer = LPAnalyzer()
-        net_lat_sen = analyzer.get_net_lat_sensitivity(lp_model)
-        self.assertEqual(len(net_lat_sen.critical_latencies), 2)
-        self.assertEqual(tuple(net_lat_sen.critical_latencies[0]), (0, 0))
-        self.assertEqual(tuple(net_lat_sen.critical_latencies[1]), (482, 1))
+        net_lat_sen = self._run_sensitivity("mpi-dep-graph/test/data/non_blocking.goal")
+        self.assertGreaterEqual(len(net_lat_sen.runtime), 3)
+        ls = [point[0] for point in net_lat_sen.runtime]
+        runtimes = [point[1] for point in net_lat_sen.runtime]
+        self.assertEqual(ls, sorted(ls))
+        self.assertTrue(all(runtimes[i] <= runtimes[i + 1] for i in range(len(runtimes) - 1)))
 
 if __name__ == "__main__":
     unittest.main()

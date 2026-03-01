@@ -109,11 +109,10 @@ class LPConverter(object):
         else:
             # If GUROBI is not installed, then use the default ortools model
             print("[WARNING] GUROBI is not installed. Using the default ortools model.")
-            model = pywraplp.Solver.CreateSolver("GLOP")
-            l = model.NumVar(0.0, 1.0, "l")
-            g = model.NumVar(0.0, 1.0, "g")
+            l = model.NumVar(0.0, float("inf"), "l")
+            g = model.NumVar(0.0, float("inf"), "g")
             # Encodes the number of ranks in the model
-            N = model.NumVar(name="N", lb=num_ranks, ub=num_ranks)
+            _ = model.NumVar(name="N", lb=num_ranks, ub=num_ranks)
 
             return l, g
 
@@ -223,7 +222,7 @@ class LPConverter(object):
             if self.use_gurobi:
                 return model.addVar(name=var_name)
             else:
-                return model.NumVar(0.0, 1.0, var_name)
+                return model.NumVar(0.0, float("inf"), var_name)
         
         def remove_var(var: Union[gp.Var, pywraplp.Variable]) -> None:
             """
@@ -232,7 +231,7 @@ class LPConverter(object):
             if self.use_gurobi:
                 model.remove(var)
             else:
-                model.Remove(var)
+                var.SetBounds(0.0, 0.0)
 
         def get_vertex_cost(v: igraph.Vertex) \
             -> Tuple[Union[gp.LinExpr, float], float]:

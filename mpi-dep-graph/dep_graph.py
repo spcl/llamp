@@ -296,7 +296,7 @@ class DependencyGraph(object):
 
         else:
             if self.graph.vs[dst]["type"] == VertexType.RECV:
-                assert self.graph.vs[src]["type"] == VertexType.CALC
+                assert self.graph.vs[src]["r"] == self.graph.vs[dst]["r"]
                 # Stores the global index of the src vertex
                 # in the dst vertex as its local computation dependency
                 self.graph.vs[dst]["loc_idx"] = src
@@ -404,7 +404,6 @@ class DependencyGraph(object):
         has a poor performance when adding edges one-by-one to the graph,
         as it needs to re-index the edges every time an edge is added.
         """
-        self.preds[dst].append(src)
         # FIXME: Redundant code
         if is_comm:
             assert self.graph.vs[src]["type"] == VertexType.SEND and \
@@ -423,8 +422,26 @@ class DependencyGraph(object):
             # Stores the global index of the src vertex
             # in the dst vertex as its local computation dependency
             if self.graph.vs[dst]["type"] == VertexType.RECV:
-                assert self.graph.vs[src]["type"] == VertexType.CALC
+                assert self.graph.vs[src]["r"] == self.graph.vs[dst]["r"]
                 self.graph.vs[dst]["loc_idx"] = src
+
+        if is_irequires:
+            assert self.graph.vs[dst]["type"] == VertexType.CALC
+            src_rank = self.graph.vs[src]["r"]
+            assert src_rank == self.graph.vs[dst]["r"]
+            # Keeps track of the asynchronous dependency endpoint.
+            self.graph.vs[dst]["i_idx"] = src
+            # irequires edge should point to a predecessor of src in the same rank.
+            pred_src = None
+            for pred in self.preds[src]:
+                if self.graph.vs[pred]["r"] == src_rank:
+                    pred_src = pred
+                    break
+            assert pred_src is not None, \
+                f"Could not find a predecessor of {dst} in rank {src_rank}"
+            src = pred_src
+
+        self.preds[dst].append(src)
         
         if immediate:
             self.graph.add_edge(src, dst, is_irequires=is_irequires)

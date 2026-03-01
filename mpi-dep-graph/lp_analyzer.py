@@ -32,9 +32,53 @@ class LPAnalyzer(object):
 
     def __get_net_lat_sensitivity_ortools(self, model: pywraplp.Solver,
                                           L_ub: int, L_lb: int,
+                                          step: int,
                                           verbose: bool) -> NetLatSensitivity:
-        # TODO: Implement this
-        raise NotImplementedError("Only GUROBI is supported at the moment.")
+        l_var = model.LookupVariable("l")
+        assert l_var is not None, "[ERROR] Variable 'l' not found in OR-Tools model."
+
+        runtimes = []
+        lat_costs = []
+        critical_latencies = []
+
+        prev_runtime = None
+        prev_l = None
+        prev_slope = None
+
+        for L in range(L_lb, L_ub + 1, step):
+            l_var.SetBounds(L, L)
+            status = model.Solve()
+            assert status == pywraplp.Solver.OPTIMAL, \
+                f"[ERROR] OR-Tools failed to solve model at L={L}, status={status}"
+            runtime = model.Objective().Value()
+            runtimes.append((L, runtime))
+
+            if prev_runtime is not None:
+                slope = (runtime - prev_runtime) / max(1, L - prev_l)
+                lat_cost = 0 if runtime == 0 else (slope * L / runtime)
+                lat_costs.append((L, lat_cost))
+
+                if prev_slope is None:
+                    critical_latencies.append((prev_l, slope))
+                    prev_slope = slope
+                elif abs(slope - prev_slope) > 1e-12:
+                    critical_latencies.append((L, slope))
+                    prev_slope = slope
+
+            prev_runtime = runtime
+            prev_l = L
+
+        if len(critical_latencies) == 0:
+            critical_latencies = [(L_lb, 0.0)]
+        if critical_latencies[-1][0] != L_ub:
+            critical_latencies.append((L_ub, critical_latencies[-1][1]))
+        if len(lat_costs) == 0:
+            lat_costs = [(L_lb, 0.0)]
+
+        if verbose:
+            print(f"[INFO] OR-Tools sensitivity points: {len(runtimes)}")
+
+        return NetLatSensitivity(critical_latencies, runtimes, lat_costs)
 
     def __get_net_lat_sensitivity_gurobi(self,
                                          model: gp.Model,
