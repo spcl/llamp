@@ -63,6 +63,58 @@ Run the following command inside `mpi-dep-graph` to generate the 1% network late
 ```
 To change the performance degradation threshold, use the `--lat-buffer-thresh` argument. To specify the baseline of application runtime manually, use the `--lat-buf-baseline` argument.
 
+### Native Resource Serialization and Macro IR
+
+Recent LLAMP builds also support two workflow extensions that are useful for large AI communication traces:
+
+- `macro-ir` input, via `--input-format macro-ir`, for compact collective-aware traces emitted as `observed_collective` records.
+- optional native resource serialization inside the LP, which can be enabled without removing the legacy trace-order serialization flags.
+
+The native modes are designed to stay explainable and solver-friendly while preserving overlap:
+
+- `--nic-serialize` enables native send-side NIC serialization.
+- `--nic-serialize-mode {same-ready,full-timeline,windowed-timeline,credit-timeline}` selects the NIC model.
+- `--cpu-serialize` enables native CPU/progress-side serialization.
+- `--cpu-serialize-mode {full-timeline,same-ready}` selects the CPU model.
+- `--cpu-serialize-scope {all-ops,comm-only}` lets you restrict CPU serialization to communication/progress operations.
+
+Legacy modes are still available and unchanged:
+
+- `--serialize-same-nic-sends`
+- `--serialize-same-nic-recvs`
+- `--serialize-same-cpu-ops`
+
+For bandwidth sweeps where `g` remains symbolic, `--ready-proxy-g` can be used to choose the nominal `G` value that drives the static ready-order proxy used by the native heuristics. In practice, using the operating-point `G` is a good default.
+
+Example: GOAL trace with native send-side NIC serialization and communication-only CPU serialization:
+
+```console
+> python3 mpi-dep-graph/main.py \
+    -g trace.goal \
+    --solve \
+    --nic-serialize \
+    --nic-serialize-mode credit-timeline \
+    --nic-serialize-window 3 \
+    --cpu-serialize \
+    --cpu-serialize-mode full-timeline \
+    --cpu-serialize-scope comm-only
+```
+
+Example: compact collective-aware input:
+
+```console
+> python3 mpi-dep-graph/main.py \
+    -g trace.interval.stage.motif.macro.ir \
+    --input-format macro-ir \
+    --solve \
+    --nic-serialize \
+    --nic-serialize-mode credit-timeline \
+    --cpu-serialize \
+    --cpu-serialize-scope comm-only
+```
+
+For a more focused description of the dependency-graph inputs and the native-vs-legacy serialization options, see `mpi-dep-graph/README.md`.
+
 
 ### Misc
 

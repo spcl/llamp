@@ -10,6 +10,7 @@ class VertexType(Enum):
     SEND = 0
     RECV = 1
     CALC = 2
+    MACRO = 3
 
 
 class DependencyGraph(object):
@@ -132,22 +133,32 @@ class DependencyGraph(object):
         # Adds a dummy parent vertex to all the starting vertices and
         # a dummy child vertex to all the ending vertices
         start_vertices = self.get_starting_vertices()
-        
-        assert len(start_vertices) == self.num_ranks, \
-            f"[ERROR] The number of starting vertices ({len(start_vertices)}) " \
-            f"must be equal to the number of ranks ({self.num_ranks})."
+        end_vertices = self.get_end_vertices()
+
+        # Some generators emit multiple disconnected per-rank components.
+        # That is still a valid DAG as long as all roots/sinks are attached
+        # to the synthetic global start/end vertices.
+        start_by_rank = defaultdict(list)
+        end_by_rank = defaultdict(list)
+        for v in start_vertices:
+            start_by_rank[self.graph.vs[v]["r"]].append(v)
+        for v in end_vertices:
+            end_by_rank[self.graph.vs[v]["r"]].append(v)
+
+        for rank in range(self.num_ranks):
+            if self.rank_to_start_v[rank] is None and start_by_rank[rank]:
+                self.rank_to_start_v[rank] = start_by_rank[rank][0]
+            if self.rank_to_end_v[rank] is None and end_by_rank[rank]:
+                self.rank_to_end_v[rank] = end_by_rank[rank][-1]
 
         # Adds a dummy parent vertex
         dummy_start = self.add_vertex(VertexType.CALC, -1, -1, cost=0)
         dummy_end = self.add_vertex(VertexType.CALC, -1, -1, cost=0)
-        for v in self.rank_to_start_v:
+        for v in start_vertices:
             self.add_edge_by_global_index(dummy_start, v)
-        for v in self.rank_to_end_v:
+        for v in end_vertices:
             self.add_edge_by_global_index(v, dummy_end)
         self.add_pending_edges()
-
-        if self.is_loggps:
-            self.add_virtual_edges_for_loggps()
 
         self.start_v = dummy_start
         self.end_v = dummy_end
@@ -203,7 +214,9 @@ class DependencyGraph(object):
     def add_vertex(self, type: VertexType, rank: int,
                    local_index: int,
                    cost: Optional[int] = None,
-                   other_rank: Optional[int] = None) -> int:
+                   other_rank: Optional[int] = None,
+                   cpu: Optional[int] = None,
+                   nic: Optional[int] = None) -> int:
         """
         Add a single vertex to the dependency graph.
         @param type: The type of the vertex, can be SEND, RECV or CALC.
@@ -224,10 +237,14 @@ class DependencyGraph(object):
             "l": local_index,
             "cost": cost,
         }
+        if cpu is not None:
+            attrs["cpu"] = cpu
+        if nic is not None:
+            attrs["nic"] = nic
         if other_rank is not None:
             if type == VertexType.SEND:
                 attrs["dst_r"] = other_rank
-            elif type == VertexType.RECV:
+            elif type == VertexType.RECV or type == VertexType.MACRO:
                 attrs["src_r"] = other_rank
         idx = self.graph.add_vertex(**attrs).index
         # Adds the global index to the mapping
@@ -282,11 +299,20 @@ class DependencyGraph(object):
         # Makes sure the src and dst are of the correct type
         # given that the src is a send operation
         if is_comm:
-            assert self.graph.vs[src]["type"] == VertexType.SEND and \
-                self.graph.vs[dst]["type"] == VertexType.RECV
+            assert self.graph.vs[src]["type"] == VertexType.SEND or \
+                self.graph.vs[src]["type"] == VertexType.MACRO
+            assert self.graph.vs[dst]["type"] == VertexType.RECV or \
+                self.graph.vs[dst]["type"] == VertexType.MACRO
             # Adds another attribute named "src_idx" to the dst vertex
             # that stores the global index of the src vertex
             self.graph.vs[dst]["src_idx"] = src
+            self.graph.vs[src]["dst_idx"] = dst
+            if self.graph.vs[dst]["type"] == VertexType.MACRO:
+                existing = self.graph.vs[dst]["src_indices"] \
+                    if "src_indices" in self.graph.vs[dst].attributes() else None
+                src_indices = list(existing) if existing is not None else []
+                src_indices.append(src)
+                self.graph.vs[dst]["src_indices"] = src_indices
             if self.is_ucx and not self.wired_up[src_rank, dst_rank]:
                 # Adds an additional attribute "w" to the dst vertex
                 # to indicate that it contains a wire up operation
@@ -296,9 +322,19 @@ class DependencyGraph(object):
 
         else:
             if self.graph.vs[dst]["type"] == VertexType.RECV:
-                assert self.graph.vs[src]["type"] == VertexType.CALC
+                assert self.graph.vs[src]["type"] in (
+                    VertexType.CALC,
+                    VertexType.SEND,
+                    VertexType.RECV,
+                    VertexType.MACRO,
+                )
                 # Stores the global index of the src vertex
                 # in the dst vertex as its local computation dependency
+                self.graph.vs[dst]["loc_idx"] = src
+            elif self.graph.vs[dst]["type"] == VertexType.MACRO:
+                # Macro stages can depend on either a local calc or a prior
+                # local macro stage on the same rank.
+                assert self.graph.vs[src]["type"] in (VertexType.CALC, VertexType.MACRO)
                 self.graph.vs[dst]["loc_idx"] = src
         
         # Checks if is_irequire is True
@@ -407,9 +443,26 @@ class DependencyGraph(object):
         self.preds[dst].append(src)
         # FIXME: Redundant code
         if is_comm:
-            assert self.graph.vs[src]["type"] == VertexType.SEND and \
-                self.graph.vs[dst]["type"] == VertexType.RECV
+            src_type = self.graph.vs[src]["type"]
+            dst_type = self.graph.vs[dst]["type"]
+            if dst_type == VertexType.RECV:
+                assert src_type == VertexType.SEND or src_type == VertexType.MACRO
+            elif dst_type == VertexType.MACRO:
+                # Compressed collective models may use a remote collective-entry
+                # calc vertex as the predecessor that anchors the first remote
+                # chunk, while the actual latency/bandwidth charge remains on the
+                # destination macro vertex.
+                assert src_type in (VertexType.CALC, VertexType.SEND, VertexType.MACRO)
+            else:
+                raise AssertionError("Communication edges must target RECV or MACRO vertices.")
             self.graph.vs[dst]["src_idx"] = src
+            self.graph.vs[src]["dst_idx"] = dst
+            if self.graph.vs[dst]["type"] == VertexType.MACRO:
+                existing = self.graph.vs[dst]["src_indices"] \
+                    if "src_indices" in self.graph.vs[dst].attributes() else None
+                src_indices = list(existing) if existing is not None else []
+                src_indices.append(src)
+                self.graph.vs[dst]["src_indices"] = src_indices
             if self.is_ucx:
                 src_rank = self.graph.vs[src]["r"]
                 dst_rank = self.graph.vs[dst]["r"]
@@ -421,9 +474,17 @@ class DependencyGraph(object):
                     self.wired_up[src_rank, dst_rank] = True
         else:
             # Stores the global index of the src vertex
-            # in the dst vertex as its local computation dependency
+            # in the dst vertex as its local computation dependency.
             if self.graph.vs[dst]["type"] == VertexType.RECV:
-                assert self.graph.vs[src]["type"] == VertexType.CALC
+                assert self.graph.vs[src]["type"] in (
+                    VertexType.CALC,
+                    VertexType.SEND,
+                    VertexType.RECV,
+                    VertexType.MACRO,
+                )
+                self.graph.vs[dst]["loc_idx"] = src
+            elif self.graph.vs[dst]["type"] == VertexType.MACRO:
+                assert self.graph.vs[src]["type"] in (VertexType.CALC, VertexType.MACRO)
                 self.graph.vs[dst]["loc_idx"] = src
         
         if immediate:
@@ -451,6 +512,13 @@ class DependencyGraph(object):
             print(f"Recv size: {self.graph.vs[v]['cost']}")
         elif self.graph.vs[v]["type"] == VertexType.CALC:
             print(f"Cost: {self.graph.vs[v]['cost']}")
+        elif self.graph.vs[v]["type"] == VertexType.MACRO:
+            print(f"Source vertex: {self.graph.vs[v]['src_idx']}")
+            print(f"Source rank: {self.graph.vs[v]['src_r']}")
+            print(f"Local dependency: {self.graph.vs[v]['loc_idx']}")
+            print(f"Cost: {self.graph.vs[v]['cost']}")
+            print(f"Latency coefficient: {self.graph.vs[v]['lat_coeff']}")
+            print(f"Bandwidth coefficient: {self.graph.vs[v]['bw_coeff']}")
         else:
             raise ValueError(f"[ERROR] Invalid vertex type: {self.graph.vs[v]['type']}")
 
@@ -514,7 +582,7 @@ class DependencyGraph(object):
         # Obtains a list of unique colors for each rank
         rank_colors = \
             igraph.drawing.colors.ClusterColoringPalette(self.num_ranks)
-        vertex_colors = ["lightgreen", "lightgreen", "salmon3"]
+        vertex_colors = ["lightgreen", "lightgreen", "salmon3", "skyblue3"]
         # Assigns a color to each vertex based on its type
         visual_style["vertex_color"] = \
             [vertex_colors[v["type"].value] for v in self.graph.vs]

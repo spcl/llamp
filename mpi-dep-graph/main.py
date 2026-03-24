@@ -4,12 +4,12 @@ import argparse
 from typing import Optional, List, Union, Tuple
 from dep_graph_generator import DependencyGraphGenerator
 from dep_graph import DependencyGraph
+from macro_ir import MacroIRGraphGenerator
 from lp_analyzer import LPAnalyzer
 from lp_converter import LPConverter
 from architecture_desc import TwoLevelHierarchy
 from dep_graph import VertexType
 from topology import NetTopology
-from dep_graph_analyzer import DependencyGraphAnalyzer
 import psutil
 from time import time
 from utils import *
@@ -17,10 +17,20 @@ from utils import *
 
 SOLVER_TYPE = "GLOP"
 
+
+def get_model_size(model) -> Tuple[int, int]:
+    if is_gurobi_installed():
+        return model.NumVars, model.NumConstrs
+    return model.NumVariables(), model.NumConstraints()
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog="MPI Dependency Graph Generator")
     parser.add_argument("-g", "--goal-file", dest="goal_file", default=None,
                         help="Path to the goal file that will be parsed.")
+    parser.add_argument("--input-format", dest="input_format",
+                        choices=["goal", "macro-ir"], default="goal",
+                        help="Input format for -g/--goal-file. Use 'macro-ir' "
+                        "for the compact collective-aware prototype path.")
     parser.add_argument("-c", "--comm-dep-file", dest="comm_dep_file",
                         required=False,
                         help="Path to the communication dependency file that "
@@ -107,6 +117,53 @@ if __name__ == "__main__":
     parser.add_argument("-G", dest="G_val", required=False, default=0.018, type=float,
                         help="If given, will set the value of G in the LogGPS model "
                         "to be a constant when constructing the LP. [DEFAULT: 0.018]")
+    parser.add_argument("--nic-serialize", dest="nic_serialize",
+                        action="store_true", default=False,
+                        help="Enable native LLAMP send-side NIC serialization.")
+    parser.add_argument("--nic-serialize-mode", dest="nic_serialize_mode",
+                        choices=["same-ready", "full-timeline", "windowed-timeline", "credit-timeline"], default="same-ready",
+                        help="Native LLAMP send-side NIC ordering mode.")
+    parser.add_argument("--nic-serialize-window", dest="nic_serialize_window",
+                        required=False, default=1, type=int,
+                        help="Outstanding-send window for native windowed NIC ordering. "
+                        "For credit-timeline, compressed MACRO sends consume 1/window NIC credits "
+                        "while raw SEND vertices still consume one full credit.")
+    parser.add_argument("--nic-serialize-scope", dest="nic_serialize_scope",
+                        choices=["rank", "node-shared"], default="rank",
+                        help="Native LLAMP send-side NIC resource scope.")
+    parser.add_argument("--recv-nic-serialize", dest="recv_nic_serialize",
+                        action="store_true", default=False,
+                        help="Enable native LLAMP recv-side NIC serialization.")
+    parser.add_argument("--cpu-serialize", dest="cpu_serialize",
+                        action="store_true", default=False,
+                        help="Enable native LLAMP per-CPU stage serialization.")
+    parser.add_argument("--cpu-serialize-mode", dest="cpu_serialize_mode",
+                        choices=["full-timeline", "same-ready"], default="full-timeline",
+                        help="Native LLAMP CPU ordering mode.")
+    parser.add_argument("--cpu-serialize-scope", dest="cpu_serialize_scope",
+                        choices=["all-ops", "comm-only"], default="all-ops",
+                        help="Native LLAMP CPU serialization scope.")
+    parser.add_argument("--cpu-serialize-resource-scope", dest="cpu_serialize_resource_scope",
+                        choices=["rank", "node-shared"], default="rank",
+                        help="Native LLAMP CPU resource scope.")
+    parser.add_argument("--nic-serialize-debug-limit", dest="nic_serialize_debug_limit",
+                        required=False, default=0, type=int,
+                        help="Dump detailed ordered send lists for up to this many (rank,nic) groups.")
+    parser.add_argument("--serialize-same-nic-sends", dest="serialize_same_nic_sends",
+                        action="store_true", default=False,
+                        help="Serialize sends that share the same traced NIC in trace order.")
+    parser.add_argument("--serialize-same-nic-recvs", dest="serialize_same_nic_recvs",
+                        action="store_true", default=False,
+                        help="Serialize receives that share the same traced NIC in trace order.")
+    parser.add_argument("--serialize-same-cpu-ops", dest="serialize_same_cpu_ops",
+                        action="store_true", default=False,
+                        help="Serialize operations that share the same traced CPU in trace order.")
+    parser.add_argument("--msg-gap", dest="msg_gap",
+                        required=False, default=0.0, type=float,
+                        help="Additional traced NIC injection gap used by same-NIC serialization.")
+    parser.add_argument("--ready-proxy-g", dest="ready_proxy_g",
+                        required=False, default=None, type=float,
+                        help="Optional nominal G used only for the static ready-order proxy.")
     
 
     args = parser.parse_args()
@@ -160,7 +217,12 @@ if __name__ == "__main__":
             
             # Generates the dependency graph
             print("[INFO] Generating dependency graph...", flush=True)
-            dep_graph_generator = DependencyGraphGenerator(goal_file, comm_dep_file)
+            if args.input_format == "goal":
+                dep_graph_generator = DependencyGraphGenerator(goal_file, comm_dep_file)
+            else:
+                if comm_dep_file is not None:
+                    raise ValueError("[ERROR] Communication dependency files are not supported in macro-ir mode.")
+                dep_graph_generator = MacroIRGraphGenerator(goal_file)
             # cProfile.run("dep_graph = dep_graph_generator.generate()")
             is_loggps = args.S is not None
             start = time()
@@ -208,12 +270,56 @@ if __name__ == "__main__":
         
         model = converter.convert_to_lp(verbose,
                                         placement_analysis,
+                                        native_nic_serialize_sends=args.nic_serialize,
+                                        native_nic_send_mode=(
+                                            "same_ready_cohort"
+                                            if args.nic_serialize_mode == "same-ready"
+                                            else (
+                                                "full_timeline"
+                                                if args.nic_serialize_mode == "full-timeline"
+                                                else (
+                                                    "windowed_timeline"
+                                                    if args.nic_serialize_mode == "windowed-timeline"
+                                                    else "credit_timeline"
+                                                )
+                                            )
+                                        ),
+                                        native_nic_send_window=args.nic_serialize_window,
+                                        native_nic_resource_scope=(
+                                            "node_shared"
+                                            if args.nic_serialize_scope == "node-shared"
+                                            else "rank"
+                                        ),
+                                        native_recv_nic_serialize_recvs=args.recv_nic_serialize,
+                                        native_cpu_serialize_ops=args.cpu_serialize,
+                                        native_cpu_mode=(
+                                            "same_ready_cohort"
+                                            if args.cpu_serialize_mode == "same-ready"
+                                            else "full_timeline"
+                                        ),
+                                        native_cpu_scope=(
+                                            "comm_only"
+                                            if args.cpu_serialize_scope == "comm-only"
+                                            else "all_ops"
+                                        ),
+                                        native_cpu_resource_scope=(
+                                            "node_shared"
+                                            if args.cpu_serialize_resource_scope == "node-shared"
+                                            else "rank"
+                                        ),
+                                        serialize_same_nic_sends=args.serialize_same_nic_sends,
+                                        serialize_same_nic_recvs=args.serialize_same_nic_recvs,
+                                        serialize_same_cpu_ops=args.serialize_same_cpu_ops,
+                                        native_nic_debug_limit=args.nic_serialize_debug_limit,
+                                        msg_gap=args.msg_gap,
+                                        ready_proxy_G=args.ready_proxy_g,
                                         topology=topology,
                                         is_mpich=args.mpich,
                                         G=args.G_val)
     if verbose:
-        print(f"[INFO] Number of variables = {model.NumVars}")
-        print(f"[INFO] Number of constraints = {model.NumConstrs}", flush=True)
+        num_vars, num_constraints = get_model_size(model)
+        print(f"[INFO] Number of variables = {num_vars}")
+        print(f"[INFO] Number of constraints = {num_constraints}", flush=True)
     # Outputs memory usage of the process
     print(f"[INFO] Memory usage: {psutil.Process(os.getpid()).memory_info().rss / 1024 ** 2} MB", flush=True)
     if args.export_lp_model_path is not None:
@@ -227,8 +333,10 @@ if __name__ == "__main__":
             # Writes a MPS file as well
             model.write(args.export_lp_model_path.replace(".lp", ".mps"))
         else:
-            # model.ExportModelAsMpsFormat(False, args.export_lp_model_path, False)
-            model.ExportModelAsLpFormat(False, args.export_lp_model_path, False)
+            with open(args.export_lp_model_path, "w") as out_f:
+                out_f.write(model.ExportModelAsLpFormat(False))
+            with open(args.export_lp_model_path.replace(".lp", ".mps"), "w") as out_f:
+                out_f.write(model.ExportModelAsMpsFormat(False, False))
         print(f"[INFO] Exported LP model to {args.export_lp_model_path}.", flush=True)
     
     # Initializes the analyzer

@@ -69,19 +69,47 @@ class GoalFileParser(object):
         if match:
             return RankEnd()
         # Matches the send operation
-        match = re.match(r"^l(\d+)\s*:\s*send\s+(\d+)b\s+to\s+(\d+)(?:\s+tag\s+(\d+))?$", line)
+        match = re.match(
+            r"^l(\d+)\s*:\s*send\s+(\d+)b\s+to\s+(\d+)"
+            r"(?:\s+tag\s+(\d+))?"
+            r"(?:\s+cpu\s+(\d+))?"
+            r"(?:\s*nic\s+(\d+))?$",
+            line,
+        )
         if match:
-            return SendOp(int(match.group(1)), int(match.group(2)),
-                          int(match.group(3)), int(match.group(4)))
+            return SendOp(
+                int(match.group(1)),
+                int(match.group(2)),
+                int(match.group(3)),
+                int(match.group(4)) if match.group(4) is not None else None,
+                int(match.group(5)) if match.group(5) is not None else None,
+                int(match.group(6)) if match.group(6) is not None else None,
+            )
         # Matches the recv operation
-        match = re.match(r"^l(\d+)\s*:\s*recv\s+(\d+)b\s+from\s+(\d+)(?:\s+tag\s+(\d+))?$", line)
+        match = re.match(
+            r"^l(\d+)\s*:\s*recv\s+(\d+)b\s+from\s+(\d+)"
+            r"(?:\s+tag\s+(\d+))?"
+            r"(?:\s+cpu\s+(\d+))?"
+            r"(?:\s*nic\s+(\d+))?$",
+            line,
+        )
         if match:
-            return RecvOp(int(match.group(1)), int(match.group(2)),
-                          int(match.group(3)), int(match.group(4)))
+            return RecvOp(
+                int(match.group(1)),
+                int(match.group(2)),
+                int(match.group(3)),
+                int(match.group(4)) if match.group(4) is not None else None,
+                int(match.group(5)) if match.group(5) is not None else None,
+                int(match.group(6)) if match.group(6) is not None else None,
+            )
         # Matches the calc operation
-        match = re.match(r"^l(\d+)\s*:\s*calc\s+(\d+)$", line)
+        match = re.match(r"^l(\d+)\s*:\s*calc\s+(\d+)(?:\s+cpu\s+(\d+))?$", line)
         if match:
-            return CalcOp(int(match.group(1)), int(match.group(2)))
+            return CalcOp(
+                int(match.group(1)),
+                int(match.group(2)),
+                int(match.group(3)) if match.group(3) is not None else None,
+            )
         # Matches the dependency
         match = re.match(r"^l(\d+)\s+(irequires|requires)\s+l(\d+)$", line)
         if match:

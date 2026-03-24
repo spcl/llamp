@@ -48,7 +48,9 @@ class SendOp(GoalElement):
     An object that represents a send operation in the goal file.
     """
     def __init__(self, label: int, data_size: int,
-                 dst: int, tag: Optional[int] = None) -> None:
+                 dst: int, tag: Optional[int] = None,
+                 cpu: Optional[int] = None,
+                 nic: Optional[int] = None) -> None:
         """
         Initialize the send operation object.
         @param label: The label of the send operation.
@@ -60,6 +62,8 @@ class SendOp(GoalElement):
         self.data_size = data_size
         self.dst = dst
         self.tag = tag
+        self.cpu = cpu
+        self.nic = nic
 
 
 class RecvOp(GoalElement):
@@ -67,7 +71,9 @@ class RecvOp(GoalElement):
     An object that represents a recv operation in the goal file.
     """
     def __init__(self, label: int, data_size: int,
-                 src: int, tag: int) -> None:
+                 src: int, tag: int,
+                 cpu: Optional[int] = None,
+                 nic: Optional[int] = None) -> None:
         """
         Initialize the recv operation object.
         @param label: The label of the recv operation.
@@ -79,13 +85,16 @@ class RecvOp(GoalElement):
         self.data_size = data_size
         self.src = src
         self.tag = tag
+        self.cpu = cpu
+        self.nic = nic
 
 
 class CalcOp(GoalElement):
     """
     An object that represents a calc operation in the goal file.
     """
-    def __init__(self, label: int, cost: int) -> None:
+    def __init__(self, label: int, cost: int,
+                 cpu: Optional[int] = None) -> None:
         """
         Initialize the calc operation object.
         @param label: The label of the calc operation.
@@ -93,6 +102,7 @@ class CalcOp(GoalElement):
         """
         self.label = label
         self.cost = cost
+        self.cpu = cpu
 
 
 class Dependency(GoalElement):

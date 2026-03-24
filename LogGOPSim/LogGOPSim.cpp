@@ -195,6 +195,12 @@ int main(int argc, char **argv) {
   // Stores a vector of tuples each containing four elements:
   // (source rank, source offset, dest rank, dest offset)
   std::vector<std::tuple<uint32_t, uint32_t, uint32_t, uint32_t>> comm_deps;
+  std::vector<std::vector<int32_t>> last_send_offset, last_recv_offset, last_comm_cpu_offset;
+  if (args_info.comm_dep_file_given) {
+    last_send_offset.assign(p, std::vector<int32_t>(nnics, -1));
+    last_recv_offset.assign(p, std::vector<int32_t>(nnics, -1));
+    last_comm_cpu_offset.assign(p, std::vector<int32_t>(ncpus, -1));
+  }
 
   if( args_info.qstat_given ){
     // Initialize MPI matching data structures
@@ -342,7 +348,31 @@ int main(int argc, char **argv) {
           net.insert(elem.time, elem.host, elem.target, elem.size, &elem.handle);
 
           elem.type = OP_MSG;
-          int h = elem.host;
+            int h = elem.host;
+            if (args_info.comm_dep_file_given) {
+              int32_t prev_cpu_offset = last_comm_cpu_offset[h][elem.proc];
+              if (prev_cpu_offset >= 0) {
+                auto dep_cpu = std::make_tuple(
+                  static_cast<uint32_t>(h),
+                  static_cast<uint32_t>(prev_cpu_offset),
+                  static_cast<uint32_t>(h),
+                  static_cast<uint32_t>(elem.offset)
+                );
+                comm_deps.push_back(dep_cpu);
+              }
+              last_comm_cpu_offset[h][elem.proc] = elem.offset;
+              int32_t prev_offset = last_send_offset[h][elem.nic];
+              if (prev_offset >= 0) {
+                auto dep = std::make_tuple(
+                static_cast<uint32_t>(h),
+                static_cast<uint32_t>(prev_offset),
+                static_cast<uint32_t>(h),
+                static_cast<uint32_t>(elem.offset)
+              );
+              comm_deps.push_back(dep);
+            }
+            last_send_offset[h][elem.nic] = elem.offset;
+          }
           elem.host = elem.target;
           elem.target = h;
           elem.starttime = elem.time;
@@ -391,13 +421,35 @@ int main(int argc, char **argv) {
         if(match_attempts >= 0)  { // found it in local UQ 
           // std::cout << "[INFO] Rank " << matched_elem.src << ": " <<
           //   matched_elem.offset << " -> " << "Rank " << elem.host << ": " << elem.offset << std::endl;
-          if (args_info.comm_dep_file_given)
-          {
-            // Stores communication dependencies
-            auto dep = std::make_tuple(matched_elem.src, matched_elem.offset,
-                                       elem.host, elem.offset);
-            comm_deps.push_back(dep);
-          }
+            if (args_info.comm_dep_file_given)
+            {
+              int32_t prev_cpu_offset = last_comm_cpu_offset[elem.host][elem.proc];
+              if (prev_cpu_offset >= 0) {
+                auto dep_cpu = std::make_tuple(
+                  static_cast<uint32_t>(elem.host),
+                  static_cast<uint32_t>(prev_cpu_offset),
+                  static_cast<uint32_t>(elem.host),
+                  static_cast<uint32_t>(elem.offset)
+                );
+                comm_deps.push_back(dep_cpu);
+              }
+              last_comm_cpu_offset[elem.host][elem.proc] = elem.offset;
+              int32_t prev_recv_offset = last_recv_offset[elem.host][elem.nic];
+              if (prev_recv_offset >= 0) {
+                auto dep = std::make_tuple(
+                  static_cast<uint32_t>(elem.host),
+                  static_cast<uint32_t>(prev_recv_offset),
+                  static_cast<uint32_t>(elem.host),
+                  static_cast<uint32_t>(elem.offset)
+                );
+                comm_deps.push_back(dep);
+              }
+              last_recv_offset[elem.host][elem.nic] = elem.offset;
+              // Stores communication dependencies
+              auto dep = std::make_tuple(matched_elem.src, matched_elem.offset,
+                                        elem.host, elem.offset);
+              comm_deps.push_back(dep);
+            }
           if(print) printf("-- found in local UQ\n");
           if(args_info.qstat_given) {
             // RECORD match queue statistics
@@ -479,13 +531,33 @@ int main(int argc, char **argv) {
           if(match_attempts >= 0) { // found it in RQ
             // std::cout << "[INFO] Rank " << matched_elem.src << ": " <<
             // matched_elem.offset << " -> " << "Rank " << elem.host << ": " << elem.offset << std::endl;
-            if (args_info.comm_dep_file_given)
-            {
-              // Stores communication dependencies
-              auto dep = std::make_tuple(elem.target, elem.offset,
-                                         elem.host, matched_elem.offset);
-              comm_deps.push_back(dep);
-            }
+                if (args_info.comm_dep_file_given)
+                {
+                  int32_t prev_cpu_offset = last_comm_cpu_offset[elem.host][cpu];
+                  if (prev_cpu_offset >= 0) {
+                    auto dep_cpu = std::make_tuple(
+                        static_cast<uint32_t>(elem.host),
+                        static_cast<uint32_t>(prev_cpu_offset),
+                        static_cast<uint32_t>(elem.host),
+                        static_cast<uint32_t>(matched_elem.offset));
+                    comm_deps.push_back(dep_cpu);
+                  }
+                  last_comm_cpu_offset[elem.host][cpu] = matched_elem.offset;
+                  int32_t prev_recv_offset = last_recv_offset[elem.host][elem.nic];
+                  if (prev_recv_offset >= 0) {
+                    auto dep_same_rank = std::make_tuple(
+                        static_cast<uint32_t>(elem.host),
+                        static_cast<uint32_t>(prev_recv_offset),
+                        static_cast<uint32_t>(elem.host),
+                        static_cast<uint32_t>(matched_elem.offset));
+                    comm_deps.push_back(dep_same_rank);
+                  }
+                  last_recv_offset[elem.host][elem.nic] = matched_elem.offset;
+                  // Stores communication dependencies
+                  auto dep = std::make_tuple(elem.target, elem.offset,
+                                              elem.host, matched_elem.offset);
+                  comm_deps.push_back(dep);
+                }
 
             if(args_info.qstat_given) {
               // RECORD match queue statistics

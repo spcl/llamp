@@ -1,4 +1,9 @@
-import gurobipy as gp
+from __future__ import annotations
+
+try:
+    import gurobipy as gp
+except ImportError:
+    gp = None
 import subprocess
 import seaborn as sns
 import matplotlib.pyplot as plt
@@ -17,11 +22,21 @@ This file contains utility functions that are used by the
 main scripts.
 """
 
+@functools.lru_cache(maxsize=1)
 def is_gurobi_installed() -> bool:
     """
     Checks if the GUROBI solver is installed on the machine
-    by running the command "gurobi_cl --version".
+    by checking for a working gurobipy license first and falling
+    back to the "gurobi_cl --version" probe.
     """
+    if gp is not None:
+        try:
+            env = gp.Env(empty=True)
+            env.start()
+            env.dispose()
+            return True
+        except Exception:
+            pass
     try:
         subprocess.check_output(["gurobi_cl", "--version"])
         return True

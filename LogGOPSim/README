@@ -31,6 +31,13 @@ Running
       our example with default parameters)
     - for larger runs, only the maximum time is printed
 
+  * optional: export a communication-dependency sidecar for LLAMP:
+    - e.g., `LogGOPSim -f dissemination_16.bin --comm-dep-file deps.csv`
+    - this writes a CSV of observed communication-order dependencies that can
+      be consumed by `mpi-dep-graph/main.py -c ...`
+    - newer LLAMP workflows may use this file both for exact cross-rank
+      message matches and for richer same-rank replay/order metadata
+
 Visualization
 -------------
 

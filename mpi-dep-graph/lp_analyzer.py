@@ -1,6 +1,11 @@
+from __future__ import annotations
+
 import numpy as np
 import copy
-import gurobipy as gp
+try:
+    import gurobipy as gp
+except ImportError:
+    gp = None
 import igraph
 from time import time
 from tqdm import tqdm
@@ -32,9 +37,34 @@ class LPAnalyzer(object):
 
     def __get_net_lat_sensitivity_ortools(self, model: pywraplp.Solver,
                                           L_ub: int, L_lb: int,
+                                          step: int,
                                           verbose: bool) -> NetLatSensitivity:
-        # TODO: Implement this
-        raise NotImplementedError("Only GUROBI is supported at the moment.")
+        l = model.LookupVariable("l")
+        assert l is not None, "[ERROR] Decision variable 'l' not found"
+
+        critical_latencies = []
+        runtimes = []
+        lat_costs = []
+        curr_a = None
+
+        for L in tqdm(range(L_lb, L_ub + 1, step), disable=not verbose):
+            l.SetLb(L)
+            result = model.Solve()
+            assert result == pywraplp.Solver.OPTIMAL
+            runtime = model.Objective().Value()
+            rc = l.reduced_cost()
+            runtimes.append((l.solution_value(), runtime))
+            lat_costs.append((l.solution_value(), rc * l.solution_value() / runtime if runtime else 0.0))
+            if curr_a is None or rc != curr_a:
+                critical_latencies.append((L, rc))
+                curr_a = rc
+
+        if not critical_latencies:
+            critical_latencies.append((L_lb, 0.0))
+        if critical_latencies[-1][0] != L_ub:
+            critical_latencies.append((L_ub, critical_latencies[-1][1]))
+
+        return NetLatSensitivity(critical_latencies, runtimes, lat_costs)
 
     def __get_net_lat_sensitivity_gurobi(self,
                                          model: gp.Model,
@@ -231,6 +261,32 @@ class LPAnalyzer(object):
         # Restores the original objective function
         return l.x
 
+    def __get_net_lat_buffer_ortools(self, model: pywraplp.Solver,
+                                     threshold: float,
+                                     baseline_runtime: Optional[int],
+                                     verbose: bool) -> float:
+        l = model.LookupVariable("l")
+        t = model.LookupVariable("t")
+        assert l is not None, "[ERROR] Decision variable 'l' not found"
+        assert t is not None, "[ERROR] Decision variable 't' not found"
+
+        if baseline_runtime is None:
+            baseline_L = l.lb() if l.lb() > -pywraplp.Solver.infinity() else 0.0
+            l.SetLb(baseline_L)
+            result = model.Solve()
+            assert result == pywraplp.Solver.OPTIMAL
+            baseline_runtime = model.Objective().Value()
+
+        max_runtime = baseline_runtime * (1 + threshold)
+        model.Add(t <= max_runtime)
+        objective = model.Objective()
+        objective.Clear()
+        objective.SetCoefficient(l, 1.0)
+        objective.SetMaximization()
+        result = model.Solve()
+        assert result == pywraplp.Solver.OPTIMAL
+        return l.solution_value()
+
 
     @measure_time("network latency buffer")
     def get_net_lat_buffer(self, model: Union[gp.Model, pywraplp.Solver],
@@ -250,7 +306,7 @@ class LPAnalyzer(object):
         if self.use_gurobi:
             return self.__get_net_lat_buffer_gurobi(model, threshold, baseline_runtime, verbose)
         else:
-            raise NotImplementedError("Only GUROBI is supported at the moment.")
+            return self.__get_net_lat_buffer_ortools(model, threshold, baseline_runtime, verbose)
 
 
     # ======================================================================
@@ -279,7 +335,8 @@ class LPAnalyzer(object):
                 g.lb = 0.018
         else:
             # Fetches the L variable from the Ortools model
-            pass
+            l = model.LookupVariable("l")
+            assert l is not None, "[ERROR] Decision variable 'l' not found"
 
         for L in tqdm(range(l_min, l_max + 1, step)):
             if self.use_gurobi:
@@ -289,7 +346,11 @@ class LPAnalyzer(object):
                 runtime[L] = model.objVal
                 net_lat_sen[L] = l.RC
             else:
-                pass
+                l.SetLb(L)
+                result = model.Solve()
+                assert result == pywraplp.Solver.OPTIMAL
+                runtime[L] = model.Objective().Value()
+                net_lat_sen[L] = l.reduced_cost()
         
         # Saves the results to a CSV file
         save_dict_to_csv(runtime, "runtime.csv",
